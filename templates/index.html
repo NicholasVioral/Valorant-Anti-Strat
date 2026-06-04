@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Valorant Counter-Strat Analyzer</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0f1923; color: #e8e8e8; font-family: 'Segoe UI', sans-serif; }
+    .navbar-brand { color: #ff4655 !important; font-weight: 700; letter-spacing: 1px; }
+    .card {
+      background: #1a2530;
+      border: 1px solid #2a3a4a;
+      border-radius: 8px;
+      transition: transform .15s, border-color .15s;
+      cursor: pointer;
+    }
+    .card:hover { transform: translateY(-3px); border-color: #ff4655; }
+    .card-title { font-size: 1.1rem; font-weight: 600; color: #fff; }
+    .badge-atk { background: #ff4655; }
+    .badge-def { background: #2a7aff; }
+    .win-bar-wrap { background: #0f1923; border-radius: 4px; height: 6px; overflow: hidden; }
+    .win-bar { height: 6px; border-radius: 4px; background: #ff4655; }
+    .stat-num { font-size: 1.6rem; font-weight: 700; color: #ff4655; }
+    .stat-label { font-size: 0.7rem; color: #8899aa; text-transform: uppercase; letter-spacing: .5px; }
+    a { text-decoration: none; }
+    a:hover { color: inherit; }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-dark px-4 py-3" style="background:#0d1520; border-bottom:1px solid #1e2e3e">
+  <span class="navbar-brand fs-5">VALORANT COUNTER-STRAT</span>
+  <span class="text-muted small">{{ teams|length }} teams &bull; click any team to analyze</span>
+</nav>
+
+<div class="container py-4">
+  <div class="row g-3">
+    {% for t in teams %}
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <a href="/team/{{ t.name }}">
+        <div class="card p-3">
+          <div class="card-title mb-2">{{ t.name }}</div>
+          <div class="d-flex gap-3 mb-2">
+            <div>
+              <div class="stat-num">{{ t.maps }}</div>
+              <div class="stat-label">Maps</div>
+            </div>
+            <div>
+              <div class="stat-num">{{ t.wins }}</div>
+              <div class="stat-label">Wins</div>
+            </div>
+            <div>
+              <div class="stat-num">{% if t.maps > 0 %}{{ (t.wins / t.maps * 100)|round|int }}%{% else %}—{% endif %}</div>
+              <div class="stat-label">Win%</div>
+            </div>
+          </div>
+          <div class="win-bar-wrap">
+            <div class="win-bar" style="width:{% if t.maps > 0 %}{{ (t.wins / t.maps * 100)|round|int }}{% else %}0{% endif %}%"></div>
+          </div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if not teams %}
+  <div class="text-center py-5 text-muted">
+    <p class="fs-5">No data yet.</p>
+    <p>Run <code>python collect.py</code> to pull match data, then refresh.</p>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>G2 Pearl Replay</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #0f1923;
+      --panel:   #1a2530;
+      --border:  #2a3a4a;
+      --accent:  #ff4655;
+      --text:    #e8e8e8;
+      --muted:   #8899aa;
+      --a-col:   #ff4655;
+      --b-col:   #4488ff;
+    }
+    * { box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text);
+           font-family: 'Segoe UI', sans-serif; margin: 0; height: 100vh;
+           display: flex; flex-direction: column; }
+
+    nav { background: #0d1520; border-bottom: 1px solid var(--border);
+          padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+          flex-shrink: 0; }
+    nav a { color: var(--muted); font-size: .85rem; text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    .nav-title { font-weight: 700; color: var(--accent); font-size: 1rem;
+                 letter-spacing: .5px; }
+    .map-badge { background: rgba(255,70,85,.15); color: var(--accent);
+                 border: 1px solid rgba(255,70,85,.3); border-radius: 4px;
+                 padding: 2px 8px; font-size: .75rem; }
+
+    /* Round selector bar */
+    .round-bar { background: var(--panel); border-bottom: 1px solid var(--border);
+                 padding: 8px 20px; display: flex; align-items: center; gap: 12px;
+                 flex-shrink: 0; flex-wrap: wrap; }
+    .rsel { background: var(--bg); border: 1px solid var(--border); color: var(--text);
+            border-radius: 5px; padding: 5px 10px; font-size: .83rem; min-width: 360px;
+            cursor: pointer; }
+    .rsel:focus { outline: none; border-color: var(--accent); }
+    .round-meta { font-size: .78rem; color: var(--muted); }
+    .result-badge { padding: 2px 8px; border-radius: 3px; font-size: .75rem;
+                    font-weight: 700; }
+    .result-w { background: rgba(34,204,102,.15); color: #22cc66;
+                border: 1px solid rgba(34,204,102,.3); }
+    .result-l { background: rgba(255,70,85,.15); color: var(--accent);
+                border: 1px solid rgba(255,70,85,.3); }
+
+    /* Main layout */
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* Canvas side */
+    .canvas-side { flex: 1; display: flex; flex-direction: column;
+                   padding: 12px; gap: 8px; min-width: 0; }
+    .canvas-wrap { flex: 1; position: relative; background: #000;
+                   border-radius: 8px; overflow: hidden; border: 1px solid var(--border);
+                   display: flex; align-items: center; justify-content: center; }
+    #map-canvas { display: block; max-width: 100%; max-height: 100%;
+                  image-rendering: pixelated; }
+
+    /* Timeline controls */
+    .controls { display: flex; align-items: center; gap: 10px;
+                background: var(--panel); border-radius: 6px; padding: 8px 12px;
+                border: 1px solid var(--border); }
+    .play-btn { width: 32px; height: 32px; background: var(--accent);
+                border: none; border-radius: 5px; cursor: pointer; flex-shrink: 0;
+                display: flex; align-items: center; justify-content: center;
+                color: white; font-size: 14px; transition: background .15s; }
+    .play-btn:hover { background: #ff6670; }
+    .time-display { font-size: .82rem; color: var(--muted); width: 44px;
+                    flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    #scrubber { flex: 1; -webkit-appearance: none; appearance: none;
+                height: 4px; border-radius: 2px; background: var(--border);
+                cursor: pointer; outline: none; }
+    #scrubber::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--accent); cursor: pointer; }
+    #scrubber::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none; }
+    .speed-btn { background: var(--bg); border: 1px solid var(--border);
+                 color: var(--muted); border-radius: 4px; padding: 3px 8px;
+                 font-size: .75rem; cursor: pointer; flex-shrink: 0;
+                 transition: border-color .15s; }
+    .speed-btn.active { border-color: var(--accent); color: var(--text); }
+
+    /* Right panel */
+    .right-panel { width: 280px; flex-shrink: 0; display: flex;
+                   flex-direction: column; gap: 10px; padding: 12px;
+                   overflow-y: auto; border-left: 1px solid var(--border); }
+
+    .rpanel { background: var(--panel); border: 1px solid var(--border);
+              border-radius: 8px; padding: 14px; }
+    .rpanel-title { font-size: .65rem; color: var(--muted); text-transform: uppercase;
+                    letter-spacing: .8px; margin-bottom: 12px; }
+
+    /* Probability bars */
+    .prob-row { margin-bottom: 14px; }
+    .prob-header { display: flex; align-items: center; justify-content: space-between;
+                   margin-bottom: 5px; }
+    .prob-site { width: 22px; height: 22px; border-radius: 4px; display: inline-flex;
+                 align-items: center; justify-content: center; font-weight: 800;
+                 font-size: .85rem; flex-shrink: 0; }
+    .prob-pct { font-size: 1.1rem; font-weight: 700; }
+    .prob-track { height: 10px; background: var(--bg); border-radius: 5px;
+                  overflow: hidden; }
+    .prob-fill { height: 100%; border-radius: 5px;
+                 transition: width .55s cubic-bezier(.4,0,.2,1); }
+    .prob-note { font-size: .7rem; color: var(--muted); margin-top: 6px; }
+
+    /* Round info */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .info-cell { background: var(--bg); border-radius: 5px; padding: 8px 10px; }
+    .info-val { font-size: 1.1rem; font-weight: 700; line-height: 1; }
+    .info-lbl { font-size: .62rem; color: var(--muted); text-transform: uppercase;
+                letter-spacing: .5px; margin-top: 2px; }
+
+    /* Player legend */
+    .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .legend-ign { font-size: .8rem; flex: 1; }
+    .legend-status { font-size: .7rem; padding: 1px 5px; border-radius: 3px; }
+    .status-alive { background: rgba(34,204,102,.15); color: #22cc66; }
+    .status-dead  { background: rgba(255,70,85,.15);  color: var(--accent); }
+    .status-unk   { background: rgba(136,153,170,.1); color: var(--muted); }
+
+    /* Event log */
+    .event-log { max-height: 140px; overflow-y: auto; }
+    .event-row { font-size: .72rem; padding: 3px 0; border-bottom: 1px solid var(--border);
+                 display: flex; gap: 8px; align-items: center; }
+    .event-time { color: var(--muted); width: 36px; flex-shrink: 0;
+                  font-variant-numeric: tabular-nums; }
+    .event-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .loading-msg { text-align: center; color: var(--muted); padding: 40px 0;
+                   font-size: .9rem; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">&larr; Home</a>
+  <span class="nav-title">REPLAY VIEWER</span>
+  <span class="map-badge">G2 / Pearl / 2026</span>
+</nav>
+
+<!-- Round selector bar -->
+<div class="round-bar">
+  <select id="round-select" class="rsel">
+    {% for r in rounds %}
+    <option value="{{ r.match_id }}_{{ r.round_number }}"
+            data-site="{{ r.site or '' }}"
+            data-econ="{{ r.economy or '' }}"
+            data-score="{{ r.score }}"
+            data-won="{{ 'true' if r.won else 'false' }}"
+            data-event="{{ r.event }}">
+      {{ r.label }}
+    </option>
+    {% endfor %}
+  </select>
+  <span id="round-context" class="round-meta"></span>
+  <span id="result-badge" class="result-badge" style="display:none"></span>
+  <span class="round-meta" style="margin-left:auto;color:#555">{{ rounds|length }} rounds</span>
+</div>
+
+<div class="main">
+
+  <!-- Left: canvas + controls -->
+  <div class="canvas-side">
+    <div class="canvas-wrap">
+      <canvas id="map-canvas" width="520" height="520"></canvas>
+      <div id="canvas-loading" class="loading-msg" style="position:absolute">
+        Loading round data...
+      </div>
+    </div>
+    <div class="controls">
+      <button class="play-btn" id="play-btn" title="Play / Pause">&#9654;</button>
+      <span class="time-display" id="time-cur">0:00</span>
+      <input type="range" id="scrubber" min="0" max="100000" value="0" step="100">
+      <span class="time-display" id="time-end">0:00</span>
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="0.5">&frac12;x</button>
+    </div>
+  </div>
+
+  <!-- Right: probability + info -->
+  <div class="right-panel">
+
+    <!-- Site Probability -->
+    <div class="rpanel">
+      <div class="rpanel-title">Site Probability</div>
+      <div class="prob-row">
+        <div class="prob-header">
+          <span>
+            <span class="prob-site" style="background:rgba(255,70,85,.2);color:var(--a-col)">A</span>
+            &nbsp;
+          </span>
+          <span class="prob-pct" id="prob-a-pct" style="color:var(--a-col)">46%</span>
+        </div>
+        <div class="prob-track">
+          <div class="prob-fill" id="prob-a-fill"
+               style="width:46%;background:var(--a-col)"></div>
+        </div>
+      </div>
+      <div class="prob-row">
+        <div class="prob-header">
+          <span>
+            <span class="prob-site" style="background:rgba(68,136,255,.2);color:var(--b-col)">B</span>
+            &nbsp;
+          </span>
+          <span class="prob-pct" id="prob-b-pct" style="color:var(--b-col)">54%</span>
+        </div>
+        <div class="prob-track">
+          <div class="prob-fill" id="prob-b-fill"
+               style="width:54%;background:var(--b-col)"></div>
+        </div>
+      </div>
+      <div class="prob-note" id="prob-note">G2 Pearl ATK baseline</div>
+    </div>
+
+    <!-- Round Info -->
+    <div class="rpanel">
+      <div class="rpanel-title">Round Info</div>
+      <div class="info-grid">
+        <div class="info-cell">
+          <div class="info-val" id="info-score">—</div>
+          <div class="info-lbl">Score</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-val" id="info-econ">—</div>
+          <div class="info-lbl">Economy</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-val" id="info-site" style="color:var(--accent)">—</div>
+          <div class="info-lbl">Executed</div>
+        </div>
+        <div class="info-cell">
+          <div class="info-val" id="info-event" style="font-size:.75rem;color:var(--muted)">—</div>
+          <div class="info-lbl">Event</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Player Legend -->
+    <div class="rpanel">
+      <div class="rpanel-title">G2 Attackers</div>
+      <div id="player-legend"></div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="rpanel">
+      <div class="rpanel-title">Kill Log</div>
+      <div class="event-log" id="event-log"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────────
+const PLAYER_COLORS = ['#ff4655','#22cc66','#4488ff','#ffcc00','#ff88ee'];
+const BASE_PROB_A   = 0.457;   // G2's actual Pearl ATK distribution
+const SITE_BOOST    = 1.9;     // Bayesian likelihood ratio per kill near a site
+const CANVAS_SIZE   = 520;
+const PADDING       = 10;      // px to inset the minimap on canvas
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let roundData   = null;
+let minimapImg  = null;
+let playing     = false;
+let speed       = 1.0;
+let currentMs   = 0;
+let lastRaf     = null;
+let animHandle  = null;
+let playerMap   = {};   // id → {color, ign, timeline: [{t,x,y,type}], status}
+let siteBoxes   = {};   // from map_meta.sites
+
+// ── Canvas setup ───────────────────────────────────────────────────────────────
+const canvas = document.getElementById('map-canvas');
+const ctx    = canvas.getContext('2d');
+canvas.width  = CANVAS_SIZE;
+canvas.height = CANVAS_SIZE;
+
+// ── Utility ────────────────────────────────────────────────────────────────────
+function fmt(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+function smoothstep(t) {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * (3 - 2 * t);
+}
+
+function lerpN(a, b, t) { return a + (b - a) * smoothstep(t); }
+
+// Canvas px from minimap fraction
+function mpx(frac) { return PADDING + frac * (CANVAS_SIZE - 2 * PADDING); }
+
+// ── Site probability math ──────────────────────────────────────────────────────
+function inBox(x, y, box, expansion = 0.20) {
+  const px = box.width  * expansion;
+  const py = box.height * expansion;
+  return x >= box.left  - px && x <= box.left  + box.width  + px
+      && y >= box.top   - py && y <= box.top   + box.height + py;
+}
+
+function computeAProb(eventsUpTo) {
+  let wa = BASE_PROB_A, wb = 1 - BASE_PROB_A;
+  for (const e of eventsUpTo) {
+    if (inBox(e.x, e.y, siteBoxes.A || {})) {
+      wa *= SITE_BOOST;
+    } else if (inBox(e.x, e.y, siteBoxes.B || {})) {
+      wb *= SITE_BOOST;
+    }
+  }
+  const tot = wa + wb;
+  return tot > 0 ? wa / tot : BASE_PROB_A;
+}
+
+// ── Attacker spawn positions (minimap fractions, calibrated from earliest kill times)
+// Pearl: derived from kill events reaching A-main at ~4s and B-main at ~6.5s
+// Attacker spawn positions in normalised [0,1] coordinates.
+// Derived using the same min-max formula the server uses:
+//   spawnX = (spawnWorldY - minWorldY) / spanWorldY
+//   spawnY = 1 - (spawnWorldX - minWorldX) / spanWorldX
+//
+// Spawn positions using the same Riot formula as the server:
+//   mapX = worldY * xMult + xScalar   (rotation=270: worldY drives mapX)
+//   mapY = worldX * yMult + yScalar   (rotation=270: worldX drives mapY)
+// Pearl spawn: worldX≈1600, worldY≈500  ->  (500*7.8e-5+0.480)=0.519, (1600*-7.8e-5+0.916)=0.791
+const SPAWNS = {
+  Pearl:    { x: 0.52, y: 0.79 },  // Promenade south entrance
+  Bind:     { x: 0.50, y: 0.88 },
+  Fracture: { x: 0.48, y: 0.86 },
+  Split:    { x: 0.46, y: 0.87 },
+  Ascent:   { x: 0.48, y: 0.87 },
+  Lotus:    { x: 0.48, y: 0.87 },
+  Haven:    { x: 0.50, y: 0.87 },
+  Breeze:   { x: 0.50, y: 0.87 },
+};
+// Slight spread so 5 players don't all overlap at spawn
+const SPAWN_OFFSETS = [
+  { dx:  0.000, dy:  0.000 },
+  { dx: -0.025, dy:  0.020 },
+  { dx:  0.025, dy:  0.020 },
+  { dx: -0.015, dy: -0.020 },
+  { dx:  0.015, dy: -0.020 },
+];
+
+// ── Player position interpolation ─────────────────────────────────────────────
+//
+// NOTE ON DATA: the database contains kill-event positions only (victim_x/y at
+// each kill). There is no continuous location-tracking table. Each player's
+// timeline therefore has:
+//   t=0           → their spawn position (hardcoded per map)
+//   t=kill_event  → where a G2 kill placed them (≈ near the opponent they killed)
+//   t=death_event → their confirmed death position
+//
+// Between entries we smoothly interpolate so movement appears fluid.
+// Players are shown as Alive from t=0; the X mark only appears when a kill
+// event explicitly marks them as a victim (type='death').
+
+function buildPlayerTimelines(events, g2Team, playerIds, mapName) {
+  const base   = SPAWNS[mapName] || { x: 0.50, y: 0.85 };
+  const timelines  = {};
+  const deadSet    = new Set();   // player IDs confirmed dead so far
+  const playerList = [...playerIds];
+
+  // Initialise every player's timeline with their spawn position at t=0
+  playerList.forEach((id, i) => {
+    const off = SPAWN_OFFSETS[i] || { dx: 0, dy: 0 };
+    timelines[id] = [{
+      t:     0,
+      x:     Math.max(0, Math.min(1, base.x + off.dx)),
+      y:     Math.max(0, Math.min(1, base.y + off.dy)),
+      type:  'spawn',
+    }];
+  });
+
+  // Walk events chronologically and add confirmed positions
+  for (const e of events) {
+    // G2 player confirmed dead at this exact position
+    if (e.g2_death && playerIds.has(e.victim_id) && !deadSet.has(e.victim_id)) {
+      timelines[e.victim_id].push({ t: e.t, x: e.x, y: e.y, type: 'death' });
+      deadSet.add(e.victim_id);
+    }
+    // G2 player made a kill — they were near the victim's position
+    // Only add if they haven't died yet (dead players don't move)
+    if (e.g2_kill && playerIds.has(e.killer_id) && !deadSet.has(e.killer_id)) {
+      timelines[e.killer_id].push({ t: e.t, x: e.x, y: e.y, type: 'kill' });
+    }
+  }
+
+  // Timelines are already chronological because events arrive sorted
+  return timelines;
+}
+
+function getPosAt(timeline, timeMs) {
+  // Timeline always has at least the spawn entry at t=0 so this never returns null
+  if (!timeline || timeline.length === 0) return null;
+
+  // Find the last entry at or before timeMs
+  let lastIdx = 0;
+  for (let i = 1; i < timeline.length; i++) {
+    if (timeline[i].t <= timeMs) lastIdx = i;
+    else break;
+  }
+  const last = timeline[lastIdx];
+
+  // Player has a confirmed death in their past → show as dead, stop moving
+  if (last.type === 'death') {
+    return { x: last.x, y: last.y, dead: true, known: true, alpha: 0.40 };
+  }
+
+  // There is a future waypoint → smoothly interpolate toward it
+  const next = timeline[lastIdx + 1];
+  if (next) {
+    const raw = (timeMs - last.t) / Math.max(1, next.t - last.t);
+    const t   = smoothstep(raw);
+    // Position is considered "known" once at least one real event (kill/death) has happened
+    const known = last.type !== 'spawn' || next.type !== 'spawn';
+    return {
+      x:     lerpN(last.x, next.x, t),
+      y:     lerpN(last.y, next.y, t),
+      dead:  false,
+      known: known,
+      alpha: known ? 1.0 : 0.72,   // slightly faded while still at spawn estimate
+    };
+  }
+
+  // Past last waypoint — hold position
+  const known = last.type !== 'spawn';
+  return { x: last.x, y: last.y, dead: false, known, alpha: known ? 1.0 : 0.72 };
+}
+
+// ── Canvas rendering ──────────────────────────────────────────────────────────
+function drawFrame(timeMs) {
+  ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  // 1. Minimap background
+  if (minimapImg && minimapImg.complete) {
+    ctx.drawImage(minimapImg, PADDING, PADDING,
+                  CANVAS_SIZE - 2*PADDING, CANVAS_SIZE - 2*PADDING);
+  } else {
+    ctx.fillStyle = '#1a2530';
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  }
+
+  // 2. Site boxes
+  for (const [name, box] of Object.entries(siteBoxes)) {
+    const bx = mpx(box.left);
+    const by = mpx(box.top);
+    const bw = (CANVAS_SIZE - 2*PADDING) * box.width;
+    const bh = (CANVAS_SIZE - 2*PADDING) * box.height;
+    const col = name === 'A' ? '#ff4655' : '#4488ff';
+
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = col + '18';
+    ctx.fillRect(bx, by, bw, bh);
+
+    ctx.fillStyle = col;
+    ctx.font = 'bold 13px Segoe UI';
+    ctx.textAlign = 'left';
+    ctx.fillText(name, bx + 5, by + 16);
+    ctx.restore();
+  }
+
+  if (!roundData) return;
+  const events = roundData.events;
+
+  // 3. Kill event markers (fading flash rings)
+  const FADE_MS = 8_000;
+  for (const e of events) {
+    if (e.t > timeMs) break;
+    const age = timeMs - e.t;
+    if (age > FADE_MS) continue;
+
+    const alpha   = (1 - age / FADE_MS) ** 1.5;
+    const px      = mpx(e.x);
+    const py      = mpx(e.y);
+    const growing = Math.min(1, age / 400);
+    const radius  = 5 + growing * 9;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    if (e.g2_death) {
+      // G2 player died — red X mark
+      ctx.strokeStyle = '#ff4655';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      const s = 5 * (1 - growing * 0.3);
+      ctx.moveTo(px-s, py-s); ctx.lineTo(px+s, py+s);
+      ctx.moveTo(px+s, py-s); ctx.lineTo(px-s, py+s);
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    } else if (e.g2_kill) {
+      // G2 kill — expanding orange ring
+      ctx.strokeStyle = '#ff9900';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // Solid dot at center
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff9900';
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 4. Player dots
+  let pi = 0;
+  for (const [id, pdata] of Object.entries(playerMap)) {
+    const pos = getPosAt(pdata.timeline, timeMs);
+    if (!pos) { pi++; continue; }
+
+    const px  = mpx(pos.x);
+    const py  = mpx(pos.y);
+    const col = pdata.color;
+
+    ctx.save();
+    ctx.globalAlpha = pos.alpha;
+
+    if (pos.dead) {
+      // X mark for dead player
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      const s = 5;
+      ctx.beginPath();
+      ctx.moveTo(px-s, py-s); ctx.lineTo(px+s, py+s);
+      ctx.moveTo(px+s, py-s); ctx.lineTo(px-s, py+s);
+      ctx.stroke();
+    } else {
+      // Filled circle — dashed ring when position is a spawn estimate,
+      // solid white ring when position is confirmed by a kill event
+      ctx.beginPath();
+      ctx.arc(px, py, 7, 0, Math.PI * 2);
+      ctx.fillStyle = pos.known ? col : col + '99';
+      ctx.fill();
+
+      if (pos.known) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1.8;
+      } else {
+        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.50)';
+        ctx.lineWidth = 1.2;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // IGN label (only when position is confirmed — avoids cluttering spawn cluster)
+      if (pos.known) {
+        const short = pdata.ign.substring(0, 6);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 8px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.shadowColor = 'rgba(0,0,0,.8)';
+        ctx.shadowBlur  = 3;
+        ctx.fillText(short, px, py - 9);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    ctx.restore();
+    pi++;
+  }
+
+  // 5. Timestamp overlay
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.fillRect(CANVAS_SIZE - 62, CANVAS_SIZE - 26, 52, 18);
+  ctx.fillStyle = '#e8e8e8';
+  ctx.font = 'bold 11px Segoe UI';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(fmt(timeMs), CANVAS_SIZE - 14, CANVAS_SIZE - 23);
+  ctx.restore();
+}
+
+// ── Probability panel ─────────────────────────────────────────────────────────
+let lastProbA = BASE_PROB_A;
+function updateProbPanel(timeMs) {
+  const visible = (roundData?.events || []).filter(e => e.t <= timeMs);
+  const probA   = computeAProb(visible);
+
+  if (Math.abs(probA - lastProbA) < 0.005) return;
+  lastProbA = probA;
+
+  const pA = Math.round(probA * 100);
+  const pB = 100 - pA;
+  document.getElementById('prob-a-pct').textContent  = pA + '%';
+  document.getElementById('prob-b-pct').textContent  = pB + '%';
+  document.getElementById('prob-a-fill').style.width = pA + '%';
+  document.getElementById('prob-b-fill').style.width = pB + '%';
+
+  const note = document.getElementById('prob-note');
+  if (visible.length === 0) {
+    note.textContent = 'G2 Pearl ATK baseline';
+  } else {
+    const nearA = visible.filter(e => inBox(e.x, e.y, siteBoxes.A || {})).length;
+    const nearB = visible.filter(e => inBox(e.x, e.y, siteBoxes.B || {})).length;
+    note.textContent = `${visible.length} event(s): ${nearA} near A, ${nearB} near B`;
+  }
+}
+
+// ── Player legend + event log ─────────────────────────────────────────────────
+function updatePlayerLegend(timeMs) {
+  const html = Object.entries(playerMap).map(([id, p]) => {
+    const pos = getPosAt(p.timeline, timeMs);
+    // Players are Alive by default; only Dead when a kill event confirms it.
+    // "Unknown" is never shown — if we have no kill data the player is still Alive
+    // (at their spawn estimate) until proven otherwise.
+    let cls = 'alive', txt = 'Alive';
+    if (!pos) {
+      cls = 'unk'; txt = 'Alive';   // shouldn't happen (spawn always exists)
+    } else if (pos.dead) {
+      cls = 'dead'; txt = 'Dead';
+    } else if (!pos.known) {
+      cls = 'alive'; txt = 'Alive';  // at spawn estimate — still alive
+    }
+    return `<div class="legend-row">
+      <div class="legend-dot" style="background:${p.color}${pos?.known ? '' : '88'}"></div>
+      <span class="legend-ign">${p.ign}</span>
+      <span class="legend-status status-${cls}">${txt}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('player-legend').innerHTML = html || '<span style="font-size:.8rem;color:#5a6a7a">Loading...</span>';
+}
+
+function buildEventLog(events, g2Team) {
+  if (!events.length) {
+    document.getElementById('event-log').innerHTML = '<span style="font-size:.75rem;color:#5a6a7a">No events</span>';
+    return;
+  }
+  const rows = events.map(e => {
+    const col   = e.g2_kill ? '#ff9900' : '#ff4655';
+    const label = e.g2_kill ? `G2 kill (${e.weapon})` : `G2 death (${e.weapon})`;
+    return `<div class="event-row">
+      <span class="event-time">${fmt(e.t)}</span>
+      <div class="event-dot" style="background:${col}"></div>
+      <span style="color:#ccc;font-size:.72rem">${label}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('event-log').innerHTML = rows;
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+function tick(ts) {
+  if (playing) {
+    if (lastRaf !== null) {
+      currentMs += (ts - lastRaf) * speed;
+    }
+    lastRaf = ts;
+    if (currentMs >= (roundData?.duration_ms || 0)) {
+      currentMs = roundData?.duration_ms || 0;
+      playing   = false;
+      document.getElementById('play-btn').innerHTML = '&#9654;';
+      lastRaf = null;
+    }
+    document.getElementById('scrubber').value = currentMs;
+    document.getElementById('time-cur').textContent = fmt(currentMs);
+  } else {
+    lastRaf = null;
+  }
+
+  drawFrame(currentMs);
+  updateProbPanel(currentMs);
+  if (playing) updatePlayerLegend(currentMs);
+
+  animHandle = requestAnimationFrame(tick);
+}
+
+// ── Load round ────────────────────────────────────────────────────────────────
+function loadRound(matchId, roundNum) {
+  playing = false;
+  currentMs = 0;
+  lastRaf = null;
+  document.getElementById('play-btn').innerHTML = '&#9654;';
+  document.getElementById('canvas-loading').style.display = 'block';
+
+  fetch(`/api/replay/round/${matchId}/${roundNum}`)
+    .then(r => r.json())
+    .then(data => {
+      roundData  = data;
+      siteBoxes  = data.map_meta?.sites || {};
+      lastProbA  = BASE_PROB_A;
+
+      // Update scrubber range
+      const dur = data.duration_ms;
+      document.getElementById('scrubber').max = dur;
+      document.getElementById('scrubber').value = 0;
+      document.getElementById('time-end').textContent = fmt(dur);
+      document.getElementById('time-cur').textContent = '0:00';
+
+      // Update round info panel
+      const siteCol = data.site === 'A' ? 'var(--a-col)' : data.site === 'B' ? 'var(--b-col)' : '#ccc';
+      document.getElementById('info-score').textContent = data.score || '?';
+      document.getElementById('info-econ').textContent  = data.economy || '?';
+      document.getElementById('info-site').style.color  = siteCol;
+      document.getElementById('info-site').textContent  = data.site || '?';
+      document.getElementById('info-event').textContent = data.event || '?';
+
+      const rb = document.getElementById('result-badge');
+      if (data.won !== null) {
+        rb.style.display = 'inline';
+        rb.className = 'result-badge ' + (data.won ? 'result-w' : 'result-l');
+        rb.textContent = data.won ? 'WIN' : 'LOSS';
+      } else {
+        rb.style.display = 'none';
+      }
+
+      // Context in round bar
+      document.getElementById('round-context').textContent =
+        `${data.opponent} · R${data.round} · ${data.event}`;
+
+      // Build player map
+      const playerIds = new Set((data.players || []).map(p => p.id));
+      const timelines = buildPlayerTimelines(data.events || [], data.g2_team, playerIds, data.map_name);
+      playerMap = {};
+      (data.players || []).forEach((p, i) => {
+        playerMap[p.id] = {
+          color:    PLAYER_COLORS[i % PLAYER_COLORS.length],
+          ign:      p.ign,
+          timeline: timelines[p.id] || [],
+          status:   'alive',
+        };
+      });
+
+      // Load minimap
+      const url = data.map_meta?.minimap_url;
+      if (url) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload  = () => { minimapImg = img; };
+        img.onerror = () => { minimapImg = null; };
+        img.src = url;
+      }
+
+      // Event log
+      const g2Events = (data.events || []).filter(e => e.g2_kill || e.g2_death);
+      buildEventLog(g2Events, data.g2_team);
+      updatePlayerLegend(0);
+      updateProbPanel(0);
+
+      document.getElementById('canvas-loading').style.display = 'none';
+    })
+    .catch(err => {
+      console.error(err);
+      document.getElementById('canvas-loading').textContent = 'Error loading round.';
+    });
+}
+
+// ── UI controls ───────────────────────────────────────────────────────────────
+document.getElementById('play-btn').addEventListener('click', () => {
+  if (!roundData) return;
+  playing = !playing;
+  document.getElementById('play-btn').innerHTML = playing ? '&#9646;&#9646;' : '&#9654;';
+  if (playing && currentMs >= roundData.duration_ms) {
+    currentMs = 0;  // restart from beginning
+  }
+});
+
+document.getElementById('scrubber').addEventListener('input', function() {
+  playing   = false;
+  lastRaf   = null;
+  currentMs = parseFloat(this.value);
+  document.getElementById('play-btn').innerHTML = '&#9654;';
+  document.getElementById('time-cur').textContent = fmt(currentMs);
+  updatePlayerLegend(currentMs);
+  updateProbPanel(currentMs);
+});
+
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    speed = parseFloat(this.dataset.speed);
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+document.getElementById('round-select').addEventListener('change', function() {
+  const [mid, rnum] = this.value.split('_').map(Number);
+  loadRound(mid, rnum);
+});
+
+// Keyboard: space=play/pause, left/right=seek
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space')       { e.preventDefault(); document.getElementById('play-btn').click(); }
+  if (e.code === 'ArrowLeft')   { currentMs = Math.max(0, currentMs - 2000); document.getElementById('scrubber').value = currentMs; }
+  if (e.code === 'ArrowRight')  { currentMs = Math.min(roundData?.duration_ms||0, currentMs + 2000); document.getElementById('scrubber').value = currentMs; }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function init() {
+  const sel = document.getElementById('round-select');
+  if (sel.options.length > 0) {
+    const [mid, rnum] = sel.value.split('_').map(Number);
+    loadRound(mid, rnum);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

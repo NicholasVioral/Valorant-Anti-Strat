@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ team }} – Counter-Strat</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    body { background: #0f1923; color: #e8e8e8; font-family: 'Segoe UI', sans-serif; }
+    .navbar-brand { color: #ff4655 !important; font-weight: 700; }
+    .back-link { color: #8899aa; font-size:.85rem; }
+    .back-link:hover { color: #ff4655; }
+    .panel { background: #1a2530; border: 1px solid #2a3a4a; border-radius: 8px; padding: 16px; }
+    .stat-block { text-align:center; padding: 10px 16px; }
+    .stat-num { font-size: 2rem; font-weight: 700; color: #ff4655; line-height: 1; }
+    .stat-label { font-size: 0.7rem; color: #8899aa; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+    .filter-btn { background: #1a2530; border: 1px solid #3a4a5a; color: #ccc;
+                  border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: .85rem; }
+    .filter-btn.active { background: #ff4655; border-color: #ff4655; color: #fff; }
+    .filter-btn:hover:not(.active) { border-color: #ff4655; color: #fff; }
+    .section-label { font-size: .7rem; color: #8899aa; text-transform: uppercase;
+                     letter-spacing: .8px; margin-bottom: 8px; }
+    .insight-box { background:#0f1923; border-left: 3px solid #ff4655;
+                   padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 8px; }
+    .insight-box p { margin: 0; font-size: .88rem; line-height: 1.5; }
+    .chart-container { background: #0f1923; border-radius: 6px; }
+    select.filter-select {
+      background: #1a2530; border: 1px solid #3a4a5a; color: #ccc;
+      border-radius: 4px; padding: 4px 10px; font-size: .85rem; cursor: pointer;
+    }
+    select.filter-select:focus { outline: none; border-color: #ff4655; }
+
+    /* Probability Calculator */
+    .calc-select {
+      background: #0f1923; border: 1px solid #3a4a5a; color: #e8e8e8;
+      border-radius: 6px; padding: 6px 28px 6px 12px; font-size: .88rem;
+      cursor: pointer; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238899aa'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center;
+      min-width: 140px; transition: border-color .15s;
+    }
+    .calc-select:focus { outline: none; border-color: #ff4655; }
+    .calc-select:hover  { border-color: #6688aa; }
+
+    .prob-bar-track {
+      flex: 1; height: 28px; background: #0f1923;
+      border-radius: 5px; overflow: hidden; position: relative;
+    }
+    .prob-bar-fill {
+      height: 100%; border-radius: 5px;
+      transition: width .55s cubic-bezier(.4,0,.2,1);
+      position: relative;
+    }
+    .prob-bar-fill::after {
+      content: attr(data-pct);
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      font-size: .9rem; font-weight: 700; color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,.6);
+    }
+    .site-letter {
+      width: 28px; height: 28px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: .95rem; flex-shrink: 0;
+    }
+    .site-count { width: 56px; text-align: right; font-size: .8rem; color: #8899aa; flex-shrink: 0; }
+
+    .example-card {
+      background: #0f1923; border: 1px solid #1e2e3e;
+      border-radius: 6px; padding: 10px 14px;
+      display: flex; align-items: center; gap: 12px;
+      transition: border-color .15s;
+    }
+    .example-card:hover { border-color: #3a4a5a; }
+    .example-site-badge {
+      width: 36px; height: 36px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .example-outcome { font-size: .8rem; font-weight: 700; }
+    .warning-badge {
+      background: rgba(255,170,0,.12); border: 1px solid rgba(255,170,0,.4);
+      color: #ffaa00; border-radius: 6px; padding: 8px 12px;
+      font-size: .82rem; display: flex; align-items: center; gap: 8px;
+    }
+    .calc-empty {
+      color: #5a6a7a; font-size: .88rem; text-align: center; padding: 20px 0;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark px-4 py-3" style="background:#0d1520; border-bottom:1px solid #1e2e3e">
+  <div class="d-flex align-items-center gap-3">
+    <a href="/" class="back-link">&larr; All Teams</a>
+    <span class="navbar-brand fs-5 mb-0">{{ team }}</span>
+  </div>
+  <span class="text-muted small">{{ stats.total_maps }} maps &bull; {{ stats.wins }}W {{ stats.losses }}L</span>
+</nav>
+
+<div class="container-fluid py-3 px-4">
+
+  <!-- Stats row -->
+  <div class="panel mb-3 d-flex flex-wrap gap-0">
+    <div class="stat-block border-end border-secondary">
+      <div class="stat-num">{{ stats.win_pct }}%</div>
+      <div class="stat-label">Win Rate</div>
+    </div>
+    <div class="stat-block border-end border-secondary">
+      <div class="stat-num">{{ stats.total_maps }}</div>
+      <div class="stat-label">Maps</div>
+    </div>
+    <div class="stat-block border-end border-secondary">
+      <div class="stat-num">{{ stats.wins }}–{{ stats.losses }}</div>
+      <div class="stat-label">Record</div>
+    </div>
+    {% if stats.timing.avg_s %}
+    <div class="stat-block border-end border-secondary">
+      <div class="stat-num">{{ stats.timing.avg_s }}s</div>
+      <div class="stat-label">Avg First Engagement</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-num">{{ stats.timing.early }}/{{ stats.timing.mid }}/{{ stats.timing.late }}</div>
+      <div class="stat-label">Early / Mid / Late Rounds</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Filters -->
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <span class="section-label me-1">Map:</span>
+    <button class="filter-btn active" data-filter="map" data-value="all">All</button>
+    {% for m in stats.maps %}
+    <button class="filter-btn" data-filter="map" data-value="{{ m }}">{{ m }}</button>
+    {% endfor %}
+    <span class="section-label ms-3 me-1">Side:</span>
+    <button class="filter-btn active" data-filter="side" data-value="all">All</button>
+    <button class="filter-btn" data-filter="side" data-value="atk" style="border-color:#ff4655">ATK</button>
+    <button class="filter-btn" data-filter="side" data-value="def" style="border-color:#2a7aff">DEF</button>
+    <span class="section-label ms-3 me-1">Time:</span>
+    <button class="filter-btn active" data-filter="time" data-value="all">All</button>
+    <button class="filter-btn" data-filter="time" data-value="early">0–30s</button>
+    <button class="filter-btn" data-filter="time" data-value="mid">30–60s</button>
+    <button class="filter-btn" data-filter="time" data-value="late">60s+</button>
+    <span class="section-label ms-3 me-1">Show:</span>
+    <button class="filter-btn active" data-filter="type" data-value="death">Deaths</button>
+    <button class="filter-btn" data-filter="type" data-value="kill">Kill Reach</button>
+    <button class="filter-btn" data-filter="type" data-value="both">Both</button>
+  </div>
+
+  <!-- Probability Calculator -->
+  <div class="panel mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div class="section-label mb-0">ROUND STATE PREDICTOR</div>
+      <div class="d-flex gap-2 flex-wrap">
+        <div class="d-flex flex-column gap-1">
+          <label style="font-size:.65rem;color:#8899aa;letter-spacing:.5px;text-transform:uppercase">Map</label>
+          <select id="calc-map" class="calc-select">
+            <option value="all">All Maps</option>
+            {% for m in stats.maps %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="d-flex flex-column gap-1">
+          <label style="font-size:.65rem;color:#8899aa;letter-spacing:.5px;text-transform:uppercase">Economy</label>
+          <select id="calc-econ" class="calc-select">
+            <option value="all">All Economies</option>
+            <option value="eco">Eco</option>
+            <option value="half">Half Buy</option>
+            <option value="full">Full Buy</option>
+            <option value="heavy">Heavy / Op</option>
+          </select>
+        </div>
+        <div class="d-flex flex-column gap-1">
+          <label style="font-size:.65rem;color:#8899aa;letter-spacing:.5px;text-transform:uppercase">Score State</label>
+          <select id="calc-score" class="calc-select">
+            <option value="all">Any Score</option>
+            <option value="leading">Leading</option>
+            <option value="tied">Tied</option>
+            <option value="trailing">Trailing</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <!-- Left: bars + warning + sample size -->
+      <div class="col-lg-5">
+        <div id="calc-bars">
+          <div class="calc-empty">Select filters above to see prediction</div>
+        </div>
+        <div id="calc-warning" style="display:none" class="warning-badge mt-3">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          <span id="calc-warning-text">Limited data — prediction may not be reliable.</span>
+        </div>
+        <div id="calc-sample" class="mt-2" style="font-size:.78rem;color:#5a6a7a"></div>
+      </div>
+
+      <!-- Right: recent matching examples -->
+      <div class="col-lg-7">
+        <div class="section-label mb-2">RECENT MATCHING ROUNDS</div>
+        <div id="calc-examples">
+          <div class="calc-empty">No filter active</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Probability -->
+  <div id="site-prob-section" class="panel mb-3" style="display:none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="section-label mb-0">SITE PROBABILITY &nbsp;
+        <span id="sp-sample-size" class="text-muted" style="font-size:.75rem;text-transform:none"></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="section-label mb-0 me-1">Map:</span>
+        <select id="sp-map-filter" class="filter-select">
+          <option value="all">All Maps</option>
+          {% for m in stats.maps %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <!-- Overall probability bar -->
+      <div class="col-lg-3">
+        <div style="background:#0f1923;border-radius:6px;padding:14px;height:100%">
+          <div class="section-label">OVERALL</div>
+          <div id="sp-overall"></div>
+          <div class="mt-3 section-label">BY MAP</div>
+          <div id="sp-by-map"></div>
+        </div>
+      </div>
+
+      <!-- Conditional breakdowns -->
+      <div class="col-lg-5">
+        <div style="background:#0f1923;border-radius:6px;padding:14px;height:100%">
+          <div class="section-label">BY ECONOMY</div>
+          <div id="sp-econ-chart" style="height:180px"></div>
+          <div class="section-label mt-2">BY SCORE STATE</div>
+          <div id="sp-score-chart" style="height:180px"></div>
+        </div>
+      </div>
+
+      <!-- Round-by-round timeline -->
+      <div class="col-lg-4">
+        <div style="background:#0f1923;border-radius:6px;padding:14px;height:100%">
+          <div class="section-label">ATK ROUND TIMELINE</div>
+          <div id="sp-timeline" style="max-height:400px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- Left: scatter plot -->
+    <div class="col-lg-8">
+      <div class="panel">
+        <div class="section-label mb-2">POSITION MAP &nbsp;
+          <span id="point-count" class="text-white" style="font-size:.8rem; text-transform:none;"></span>
+        </div>
+        <div id="scatter" class="chart-container" style="height:580px"></div>
+      </div>
+    </div>
+
+    <!-- Right: insights + timing -->
+    <div class="col-lg-4">
+      <div class="panel mb-3">
+        <div class="section-label">INSIGHTS</div>
+        <div id="insights"></div>
+      </div>
+      <div class="panel mb-3">
+        <div class="section-label">FIRST ENGAGEMENT TIMING (ATK SIDE)</div>
+        <div id="timing-chart" class="chart-container" style="height:200px"></div>
+      </div>
+      <div class="panel">
+        <div class="section-label">DEATHS BY SIDE</div>
+        <div id="side-chart" class="chart-container" style="height:200px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TEAM      = {{ team | tojson }};
+const STATS     = {{ stats | tojson }};
+const MAP_META  = {{ map_meta | tojson }};
+
+// Active filters
+const filters = { map: 'all', side: 'all', time: 'all', type: 'death' };
+
+// ── Colour helpers ──────────────────────────────────────────────────────────
+const SIDE_COLOR  = { atk: '#ff4655', def: '#4488ff', unknown: '#aaaaaa' };
+const TIME_COLOR  = (ms) => ms < 30000 ? '#22cc66' : ms < 60000 ? '#ffcc00' : '#ff4655';
+
+function timeBucket(ms) {
+  if (ms == null) return 'unknown';
+  if (ms < 30000) return 'early';
+  if (ms < 60000) return 'mid';
+  return 'late';
+}
+
+// ── Load kills from API ──────────────────────────────────────────────────────
+let ALL_KILLS = [];
+fetch(`/api/kills/${encodeURIComponent(TEAM)}`)
+  .then(r => r.json())
+  .then(data => {
+    ALL_KILLS = data;
+    renderAll();
+    renderTimingChart();
+    renderSideChart();
+  });
+
+// ── Filter logic ─────────────────────────────────────────────────────────────
+function applyFilters(kills) {
+  return kills.filter(k => {
+    if (filters.map  !== 'all' && k.map  !== filters.map)  return false;
+    if (filters.side !== 'all' && k.side !== filters.side) return false;
+    if (filters.time !== 'all' && timeBucket(k.time_ms) !== filters.time) return false;
+    if (filters.type === 'death' && k.type !== 'death') return false;
+    if (filters.type === 'kill'  && k.type !== 'kill')  return false;
+    return true;
+  });
+}
+
+// ── Main scatter plot ─────────────────────────────────────────────────────────
+function renderScatter(kills) {
+  // Determine which map(s) to show and whether we have metadata
+  const mapsInView = filters.map === 'all'
+    ? [...new Set(kills.map(k => k.map))]
+    : [filters.map];
+
+  const plotDiv = document.getElementById('scatter');
+  const traces  = [];
+  const shapes  = [];
+  const images  = [];
+
+  // If exactly one map is selected and we have metadata, show minimap
+  const singleMap = filters.map !== 'all' ? filters.map : (mapsInView.length === 1 ? mapsInView[0] : null);
+  if (singleMap && MAP_META[singleMap]) {
+    const meta = MAP_META[singleMap];
+    if (meta.minimap_url) {
+      images.push({
+        source:  meta.minimap_url,
+        x: 0, y: 0,
+        sizex: 1, sizey: 1,
+        xref: 'x', yref: 'y',
+        sizing: 'stretch',
+        layer:  'below',
+        opacity: 0.80,
+      });
+    }
+    // Site rectangles
+    for (const [site, box] of Object.entries(meta.sites || {})) {
+      shapes.push({
+        type: 'rect',
+        x0: box.left, y0: box.top,
+        x1: box.left + box.width, y1: box.top + box.height,
+        xref: 'x', yref: 'y',
+        line: { color: '#ffcc00', width: 2, dash: 'dot' },
+        fillcolor: 'rgba(255,204,0,0.04)',
+      });
+      // Site label annotation handled in layout.annotations
+    }
+  }
+
+  // Group kills by color dimension
+  const grouped = {};
+  for (const k of kills) {
+    const key = filters.side !== 'all'
+      ? k.side
+      : timeBucket(k.time_ms);
+    if (!grouped[key]) grouped[key] = { x: [], y: [], text: [] };
+    // Plot Y: minimap_y=0 is top; we keep as-is and invert axis
+    grouped[key].x.push(k.x);
+    grouped[key].y.push(k.y);
+    grouped[key].text.push(
+      `${k.map} R${k.round} ${k.weapon}<br>${(k.time_ms/1000).toFixed(1)}s ${k.side}`
+    );
+  }
+
+  const colorMap = {
+    atk:     '#ff4655',
+    def:     '#4488ff',
+    unknown: '#aaaaaa',
+    early:   '#22cc66',
+    mid:     '#ffcc00',
+    late:    '#ff4655',
+  };
+  const labelMap = {
+    atk: 'Attacking', def: 'Defending',
+    early: '0-30s', mid: '30-60s', late: '60s+',
+  };
+
+  for (const [key, pts] of Object.entries(grouped)) {
+    traces.push({
+      type: 'scatter', mode: 'markers',
+      name: labelMap[key] || key,
+      x: pts.x, y: pts.y,
+      text: pts.text, hoverinfo: 'text',
+      marker: {
+        color: colorMap[key] || '#aaaaaa',
+        size: 9, opacity: 0.75,
+        line: { width: 0.5, color: '#000' },
+      },
+    });
+  }
+
+  // Site label annotations
+  const annotations = [];
+  if (singleMap && MAP_META[singleMap]) {
+    for (const [site, box] of Object.entries(MAP_META[singleMap].sites || {})) {
+      annotations.push({
+        x: box.left + box.width / 2,
+        y: box.top  + box.height / 2,
+        text: `<b>${site}</b>`,
+        showarrow: false,
+        font: { color: '#ffcc00', size: 14 },
+        xref: 'x', yref: 'y',
+      });
+    }
+  }
+
+  Plotly.react('scatter', traces, {
+    paper_bgcolor: '#0f1923', plot_bgcolor: '#0f1923',
+    font: { color: '#ccc', family: 'Segoe UI, sans-serif' },
+    margin: { t: 10, l: 40, r: 10, b: 40 },
+    xaxis: {
+      range: [0, 1], showgrid: false, zeroline: false,
+      tickfont: { size: 10 }, title: '',
+    },
+    yaxis: {
+      range: [1, 0],  // flip so y=0 is top (matches minimap top)
+      showgrid: false, zeroline: false,
+      tickfont: { size: 10 }, title: '', scaleanchor: 'x',
+    },
+    legend: { bgcolor: 'rgba(0,0,0,0.4)', bordercolor: '#2a3a4a',
+              borderwidth: 1, font: { size: 11 } },
+    images, shapes, annotations,
+  }, { responsive: true, displayModeBar: false });
+
+  document.getElementById('point-count').textContent =
+    `${kills.length.toLocaleString()} events`;
+}
+
+// ── Timing histogram ──────────────────────────────────────────────────────────
+function renderTimingChart() {
+  const buckets = STATS.timing?.buckets || {};
+  const xs = Object.keys(buckets).map(Number).sort((a,b)=>a-b);
+  const ys = xs.map(x => buckets[x]);
+  Plotly.react('timing-chart', [{
+    type: 'bar', x: xs.map(x => `${x}s`), y: ys,
+    marker: { color: xs.map(x => x < 20 ? '#22cc66' : x < 50 ? '#ffcc00' : '#ff4655') },
+  }], {
+    paper_bgcolor: '#0f1923', plot_bgcolor: '#0f1923',
+    font: { color: '#ccc', size: 10 },
+    margin: { t: 5, l: 30, r: 10, b: 30 },
+    xaxis: { showgrid: false },
+    yaxis: { showgrid: true, gridcolor: '#1e2e3e' },
+    bargap: 0.2,
+  }, { responsive: true, displayModeBar: false });
+}
+
+// ── Side breakdown ────────────────────────────────────────────────────────────
+function renderSideChart() {
+  const deathsBySide = { atk: 0, def: 0 };
+  for (const k of ALL_KILLS) {
+    if (k.type === 'death') deathsBySide[k.side] = (deathsBySide[k.side] || 0) + 1;
+  }
+  Plotly.react('side-chart', [{
+    type: 'bar',
+    x: ['Attacking', 'Defending'],
+    y: [deathsBySide.atk || 0, deathsBySide.def || 0],
+    marker: { color: ['#ff4655', '#4488ff'] },
+    text: [deathsBySide.atk || 0, deathsBySide.def || 0],
+    textposition: 'outside',
+  }], {
+    paper_bgcolor: '#0f1923', plot_bgcolor: '#0f1923',
+    font: { color: '#ccc', size: 11 },
+    margin: { t: 5, l: 30, r: 10, b: 30 },
+    xaxis: { showgrid: false },
+    yaxis: { showgrid: true, gridcolor: '#1e2e3e' },
+  }, { responsive: true, displayModeBar: false });
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────────
+function renderInsights(kills) {
+  const deaths = kills.filter(k => k.type === 'death');
+  const div    = document.getElementById('insights');
+  const lines  = [];
+
+  if (!deaths.length) {
+    div.innerHTML = '<p class="text-muted small">No data for current filters.</p>';
+    return;
+  }
+
+  // Side bias
+  const atkD = deaths.filter(k => k.side === 'atk').length;
+  const defD = deaths.filter(k => k.side === 'def').length;
+  const total = deaths.length;
+  if (atkD > defD * 1.3)
+    lines.push(`<b>${Math.round(atkD/total*100)}%</b> of deaths are on ATK side — they play aggressively and take duels while attacking.`);
+  else if (defD > atkD * 1.3)
+    lines.push(`<b>${Math.round(defD/total*100)}%</b> of deaths are on DEF side — they hold passive angles and rely on economy.`);
+  else
+    lines.push('Deaths split <b>relatively evenly</b> between ATK and DEF — versatile team style.');
+
+  // Map bias
+  const mapCounts = {};
+  for (const k of deaths) mapCounts[k.map] = (mapCounts[k.map] || 0) + 1;
+  const topMap = Object.entries(mapCounts).sort((a,b)=>b[1]-a[1])[0];
+  if (topMap)
+    lines.push(`Most deaths on <b>${topMap[0]}</b> (${topMap[1]} events) — cross-reference with their win rate here.`);
+
+  // Timing
+  const timing = STATS.timing;
+  if (timing?.avg_s) {
+    if (timing.avg_s < 25)
+      lines.push(`Fast team: avg first engagement at <b>${timing.avg_s}s</b>. Expect early pressure every round.`);
+    else if (timing.avg_s > 55)
+      lines.push(`Patient team: avg first engagement at <b>${timing.avg_s}s</b>. They gather info before committing.`);
+    else
+      lines.push(`Mid-tempo: avg first engagement at <b>${timing.avg_s}s</b>. Mix of fast and slow rounds.`);
+  }
+
+  // X-position bias (left/right = site preference)
+  const xs = deaths.filter(k => k.x != null).map(k => k.x);
+  if (xs.length > 5) {
+    const avg = xs.reduce((a,b)=>a+b,0) / xs.length;
+    if (avg > 0.62)
+      lines.push(`<b>Right-side heavy</b> (avg X=${avg.toFixed(2)}). On maps with right=A, stack A-site.`);
+    else if (avg < 0.38)
+      lines.push(`<b>Left-side heavy</b> (avg X=${avg.toFixed(2)}). On maps with left=B, stack B-site.`);
+    else
+      lines.push(`<b>Balanced positioning</b> (avg X=${avg.toFixed(2)}). No strong site preference detected.`);
+  }
+
+  div.innerHTML = lines.map(l =>
+    `<div class="insight-box"><p>${l}</p></div>`
+  ).join('');
+}
+
+// ── Render all ────────────────────────────────────────────────────────────────
+function renderAll() {
+  const filtered = applyFilters(ALL_KILLS);
+  renderScatter(filtered);
+  renderInsights(filtered);
+}
+
+// ── Filter buttons ────────────────────────────────────────────────────────────
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const f = btn.dataset.filter;
+    const v = btn.dataset.value;
+    filters[f] = v;
+    document.querySelectorAll(`[data-filter="${f}"]`).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderAll();
+  });
+});
+
+// ── Site Probability ──────────────────────────────────────────────────────────
+
+const ECON_ORDER   = ['eco','half','full','heavy','unknown'];
+const ECON_LABELS  = { eco:'Eco', half:'Half Buy', full:'Full Buy', heavy:'Heavy', unknown:'Unknown' };
+const SCORE_ORDER  = ['trailing','tied','leading'];
+const SCORE_LABELS = { trailing:'Trailing', tied:'Tied', leading:'Leading' };
+const SITE_COLORS  = ['#ff4655','#4488ff','#22cc66','#ffcc00'];
+
+let SP_DATA = null;
+
+function pct(p) { return p == null ? '—' : Math.round(p * 100) + '%'; }
+
+function probBar(dist, sites) {
+  if (!dist || !sites.length) return '<span class="text-muted small">No data</span>';
+  return sites.map((s, i) => {
+    const p   = dist[s] || 0;
+    const col = SITE_COLORS[i] || '#aaa';
+    return `
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span style="width:16px;font-size:.8rem;font-weight:700;color:${col}">${s}</span>
+        <div style="flex:1;background:#1a2530;border-radius:3px;height:14px;overflow:hidden">
+          <div style="width:${Math.round(p*100)}%;background:${col};height:100%;border-radius:3px;
+                      transition:width .4s"></div>
+        </div>
+        <span style="width:36px;text-align:right;font-size:.82rem;font-weight:600">${pct(p)}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderSiteProbability(mapFilter) {
+  if (!SP_DATA) return;
+  const d      = SP_DATA;
+  const sites  = d.sites;
+  if (!sites.length) return;
+
+  document.getElementById('site-prob-section').style.display = '';
+  document.getElementById('sp-sample-size').textContent =
+    `${d.known} rounds with known site out of ${d.total_atk} ATK rounds`;
+
+  // Overall
+  let overall = d.overall;
+  let byEcon  = d.by_econ;
+  let byScore = d.by_score;
+  let timeline = d.timeline;
+
+  if (mapFilter && mapFilter !== 'all' && d.by_map[mapFilter]) {
+    overall  = d.by_map[mapFilter].dist;
+    // Re-filter timeline
+    timeline = d.timeline.filter(r => r.map === mapFilter);
+    // Rebuild econ/score from timeline (approximation using overall data)
+  }
+
+  // Overall bar
+  document.getElementById('sp-overall').innerHTML = probBar(overall, sites);
+
+  // Per-map bars
+  const mapHtml = Object.entries(d.by_map).map(([m, info]) => `
+    <div class="mb-2">
+      <div style="font-size:.75rem;color:#8899aa;margin-bottom:3px">${m} <span class="text-muted">(${info.n})</span></div>
+      ${probBar(info.dist, sites)}
+    </div>`).join('');
+  document.getElementById('sp-by-map').innerHTML = mapHtml || '<span class="text-muted small">No data</span>';
+
+  // Economy bar chart
+  const econLabels = ECON_ORDER.filter(t => byEcon[t]);
+  const econTraces = sites.map((s, si) => ({
+    type: 'bar', name: 'Site ' + s,
+    x: econLabels.map(t => ECON_LABELS[t]),
+    y: econLabels.map(t => Math.round((byEcon[t]?.dist?.[s] || 0) * 100)),
+    marker: { color: SITE_COLORS[si] },
+    text: econLabels.map(t => {
+      const n = byEcon[t]?.n || 0;
+      return `n=${n}`;
+    }),
+    textposition: 'none',
+    hovertemplate: '%{y}%<extra>%{fullData.name}</extra>',
+  }));
+  Plotly.react('sp-econ-chart', econTraces, {
+    barmode: 'stack',
+    paper_bgcolor: '#0f1923', plot_bgcolor: '#0f1923',
+    font: { color: '#ccc', size: 10 },
+    margin: { t: 5, l: 30, r: 5, b: 40 },
+    xaxis: { showgrid: false },
+    yaxis: { range: [0, 100], showgrid: true, gridcolor: '#1e2e3e',
+             ticksuffix: '%' },
+    legend: { orientation: 'h', y: -0.25, font: { size: 10 } },
+    showlegend: sites.length > 1,
+  }, { responsive: true, displayModeBar: false });
+
+  // Score state bar chart
+  const scoreLabels = SCORE_ORDER.filter(s => byScore[s]);
+  const scoreTraces = sites.map((s, si) => ({
+    type: 'bar', name: 'Site ' + s,
+    x: scoreLabels.map(k => SCORE_LABELS[k]),
+    y: scoreLabels.map(k => Math.round((byScore[k]?.dist?.[s] || 0) * 100)),
+    marker: { color: SITE_COLORS[si] },
+    hovertemplate: '%{y}%<extra>%{fullData.name}</extra>',
+  }));
+  Plotly.react('sp-score-chart', scoreTraces, {
+    barmode: 'stack',
+    paper_bgcolor: '#0f1923', plot_bgcolor: '#0f1923',
+    font: { color: '#ccc', size: 10 },
+    margin: { t: 5, l: 30, r: 5, b: 40 },
+    xaxis: { showgrid: false },
+    yaxis: { range: [0, 100], showgrid: true, gridcolor: '#1e2e3e', ticksuffix: '%' },
+    legend: { orientation: 'h', y: -0.25, font: { size: 10 } },
+    showlegend: false,
+  }, { responsive: true, displayModeBar: false });
+
+  // Timeline table
+  const ECON_BADGE = {
+    eco:  '#888', half: '#f0a500', full: '#22cc66', heavy: '#00ccff', unknown: '#555'
+  };
+  const rows = timeline.map(r => {
+    const siteLabel = r.site
+      ? `<span style="font-weight:700;color:${r.site==='A'?'#ff4655':'#4488ff'}">${r.site}</span>`
+      : `<span class="text-muted">—</span>`;
+    const wonBadge = r.won
+      ? `<span style="color:#22cc66;font-size:.75rem">W</span>`
+      : `<span style="color:#ff4655;font-size:.75rem">L</span>`;
+    const econColor = ECON_BADGE[r.econ] || '#555';
+    const ultsStr = r.ults > 0
+      ? `<span style="color:#ffcc00;font-size:.7rem">${r.ults}u</span>` : '';
+    return `<tr style="font-size:.8rem;border-bottom:1px solid #1e2e3e">
+      <td style="padding:3px 6px;color:#8899aa">${r.round}</td>
+      <td style="padding:3px 6px">${r.map.substring(0,5)}</td>
+      <td style="padding:3px 6px"><span style="color:${econColor}">${ECON_LABELS[r.econ]||r.econ}</span></td>
+      <td style="padding:3px 6px">${r.score}</td>
+      <td style="padding:3px 6px">${siteLabel} ${ultsStr}</td>
+      <td style="padding:3px 4px">${wonBadge}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('sp-timeline').innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="font-size:.65rem;color:#8899aa;text-transform:uppercase">
+        <th style="padding:3px 6px">R</th>
+        <th style="padding:3px 6px">Map</th>
+        <th style="padding:3px 6px">Econ</th>
+        <th style="padding:3px 6px">Score</th>
+        <th style="padding:3px 6px">Site</th>
+        <th style="padding:3px 4px">W/L</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Probability Calculator ────────────────────────────────────────────────────
+
+const SITE_COLORS_CALC = { A: '#ff4655', B: '#4488ff', C: '#22cc66', D: '#ffcc00' };
+const ECON_COLORS      = { eco:'#8899aa', half:'#f0a500', full:'#22cc66', heavy:'#00ccff', unknown:'#555' };
+const ECON_LABELS_CALC = { eco:'Eco', half:'Half Buy', full:'Full Buy', heavy:'Heavy / Op', unknown:'Unknown' };
+
+let calcDebounce = null;
+
+function renderCalcBars(distribution, total) {
+  const container = document.getElementById('calc-bars');
+  if (!distribution.length || total === 0) {
+    container.innerHTML = '<div class="calc-empty">No rounds match these conditions.</div>';
+    return;
+  }
+
+  container.innerHTML = distribution.map(d => {
+    const col   = SITE_COLORS_CALC[d.site] || '#aaaaaa';
+    const pct   = d.pct;
+    // Don't show percentage text inside bar if bar is too narrow
+    const labelInside = pct >= 15;
+    return `
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <div class="site-letter" style="background:${col}22;color:${col}">${d.site}</div>
+        <div class="prob-bar-track">
+          <div class="prob-bar-fill"
+               id="bar-${d.site}"
+               style="width:0%;background:${col}"
+               data-pct="${pct}%">
+          </div>
+        </div>
+        <div class="site-count">${d.count}/${total}</div>
+      </div>`;
+  }).join('');
+
+  // Animate after a brief delay so transition triggers
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    distribution.forEach(d => {
+      const el = document.getElementById(`bar-${d.site}`);
+      if (el) el.style.width = d.pct + '%';
+    });
+  }));
+}
+
+function renderCalcExamples(recent) {
+  const container = document.getElementById('calc-examples');
+  if (!recent.length) {
+    container.innerHTML = '<div class="calc-empty">No matching rounds found.</div>';
+    return;
+  }
+
+  const scoreState = r => {
+    if (r.score_self > r.score_opp) return { label: 'Leading', color: '#22cc66' };
+    if (r.score_self < r.score_opp) return { label: 'Trailing', color: '#ff4655' };
+    return { label: 'Tied', color: '#ffaa00' };
+  };
+
+  container.innerHTML = recent.map(r => {
+    const sitecol  = SITE_COLORS_CALC[r.site] || '#aaa';
+    const outcomeLabel = r.won ? 'WON' : 'LOST';
+    const outcomeColor = r.won ? '#22cc66' : '#ff4655';
+    const econcol  = ECON_COLORS[r.economy] || '#666';
+    const econLabel = ECON_LABELS_CALC[r.economy] || r.economy;
+    const ss = scoreState(r);
+    const prevStr = r.prev_won === 1 ? '· prev W' : r.prev_won === 0 ? '· prev L' : '';
+    const ultStr  = r.ults > 0 ? `· ${r.ults} ult${r.ults > 1 ? 's' : ''}` : '';
+    return `
+      <div class="example-card mb-2">
+        <div class="example-site-badge" style="background:${sitecol}22;color:${sitecol}">${r.site}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.88rem;font-weight:600;margin-bottom:3px">
+            ${r.map} &nbsp;&bull;&nbsp; Round ${r.round}
+          </div>
+          <div style="font-size:.76rem;color:#8899aa;display:flex;flex-wrap:wrap;gap:6px">
+            <span style="color:${econcol}">${econLabel}</span>
+            <span>&bull;</span>
+            <span>${r.score} &nbsp;<span style="color:${ss.color}">${ss.label}</span></span>
+            ${prevStr ? `<span>&bull; <span style="color:#8899aa">${prevStr.slice(2)}</span></span>` : ''}
+            ${ultStr  ? `<span>&bull; <span style="color:#ffcc00">${ultStr.slice(2)}</span></span>` : ''}
+          </div>
+        </div>
+        <div class="example-outcome" style="color:${outcomeColor}">${outcomeLabel}</div>
+      </div>`;
+  }).join('');
+}
+
+function fetchPrediction() {
+  const map   = document.getElementById('calc-map').value;
+  const econ  = document.getElementById('calc-econ').value;
+  const score = document.getElementById('calc-score').value;
+
+  const params = new URLSearchParams({ map, economy: econ, score_state: score });
+
+  // Show loading state on bars
+  document.getElementById('calc-bars').style.opacity = '0.5';
+
+  fetch(`/api/predict/${encodeURIComponent(TEAM)}?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('calc-bars').style.opacity = '1';
+
+      renderCalcBars(data.distribution, data.total);
+      renderCalcExamples(data.recent);
+
+      // Sample size line
+      const sampleEl = document.getElementById('calc-sample');
+      if (data.total > 0) {
+        sampleEl.textContent = `Based on ${data.total} matching ATK round${data.total !== 1 ? 's' : ''} with known site execution.`;
+      } else {
+        sampleEl.textContent = '';
+      }
+
+      // Warning
+      const warnEl  = document.getElementById('calc-warning');
+      const warnTxt = document.getElementById('calc-warning-text');
+      if (data.insufficient && data.total > 0) {
+        warnEl.style.display = 'flex';
+        warnTxt.textContent = `Only ${data.total} round${data.total !== 1 ? 's' : ''} match — prediction may not be reliable. Add more matches via collect.py.`;
+      } else {
+        warnEl.style.display = 'none';
+      }
+    })
+    .catch(() => {
+      document.getElementById('calc-bars').style.opacity = '1';
+    });
+}
+
+// Wire up dropdowns with debounce
+['calc-map', 'calc-econ', 'calc-score'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    clearTimeout(calcDebounce);
+    calcDebounce = setTimeout(fetchPrediction, 80);
+  });
+});
+
+// Run immediately on load (all filters = 'all')
+fetchPrediction();
+
+// ── Load site probability data
+fetch(`/api/site-probability/${encodeURIComponent(TEAM)}`)
+  .then(r => r.json())
+  .then(data => {
+    SP_DATA = data;
+    renderSiteProbability(null);
+  });
+
+// Map filter for site probability
+document.getElementById('sp-map-filter').addEventListener('change', e => {
+  renderSiteProbability(e.target.value === 'all' ? null : e.target.value);
+});
+</script>
+</body>
+</html>
