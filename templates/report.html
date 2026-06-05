@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.team }} · {{ report.map }} · Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0d0f1a;
+      color: #c9d1e0;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 36px 24px 80px;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* Header */
+    .header { margin-bottom: 28px; }
+    h1 { font-size: 1.7rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+    h1 span { color: #60a5fa; }
+    .meta { color: #6b7280; font-size: 0.85em; margin-top: 6px; }
+
+    /* Baseline card */
+    .baseline {
+      background: #161929;
+      border: 1px solid #252a40;
+      border-left: 4px solid #3b82f6;
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin-bottom: 36px;
+      display: flex;
+      gap: 32px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .baseline-label { color: #9ca3af; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+    .baseline-stat { font-size: 1.4em; font-weight: 700; }
+    .bl-a { color: #4ade80; }
+    .bl-b { color: #f87171; }
+    .baseline-rounds { color: #6b7280; font-size: 0.85em; margin-top: 2px; }
+
+    /* Sections */
+    .section-title {
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #252a40;
+    }
+    .strong-title  { color: #4ade80; }
+    .moderate-title { color: #fbbf24; }
+    .weak-title    { color: #6b7280; }
+
+    .section { margin-bottom: 32px; }
+
+    /* Tendency rows */
+    .tendency {
+      display: grid;
+      grid-template-columns: 1fr 140px 80px 80px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #1a1e2e;
+    }
+    .tendency:last-child { border-bottom: none; }
+
+    .t-label { color: #d1d5db; }
+
+    .t-result { font-weight: 700; font-size: 1.05em; white-space: nowrap; }
+    .t-result.A { color: #4ade80; }
+    .t-result.B { color: #f87171; }
+
+    .t-rounds { color: #6b7280; font-size: 0.85em; text-align: right; white-space: nowrap; }
+    .small-sample { color: #b45309; }
+
+    .t-diff {
+      font-size: 0.82em;
+      font-weight: 600;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .t-diff.pos { color: #6ee7b7; }
+    .t-diff.neg { color: #fca5a5; }
+    .t-diff.neu { color: #6b7280; }
+
+    /* Bar */
+    .bar-wrap { grid-column: span 4; padding-top: 2px; }
+    .bar-bg { height: 3px; background: #1e2436; border-radius: 2px; }
+    .bar-fill { height: 100%; border-radius: 2px; }
+    .bar-strong  .bar-fill { background: #4ade80; }
+    .bar-moderate .bar-fill { background: #fbbf24; }
+    .bar-weak    .bar-fill { background: #4b5563; }
+
+    /* For smaller screens, single column */
+    @media (max-width: 580px) {
+      .tendency { grid-template-columns: 1fr 1fr; }
+      .t-rounds { display: none; }
+      .bar-wrap { grid-column: span 2; }
+    }
+
+    /* Footer */
+    .footer { margin-top: 48px; color: #4b5563; font-size: 0.85em; }
+    .footer a { color: #60a5fa; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    .empty { color: #4b5563; font-style: italic; font-size: 0.9em; padding: 10px 0; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>{{ report.team }} — <span>{{ report.map }}</span></h1>
+  <div class="meta">
+    {{ report.total }} attacking rounds &nbsp;·&nbsp;
+    {{ report.n_matches }} map{{ 's' if report.n_matches != 1 else '' }} &nbsp;·&nbsp;
+    vs {{ report.opponents | join(', ') }}
+  </div>
+</div>
+
+<div class="baseline">
+  <div>
+    <div class="baseline-label">Baseline — A site</div>
+    <div class="baseline-stat bl-a">{{ report.baseline_a }}%</div>
+    <div class="baseline-rounds">{{ report.n_a }} rounds</div>
+  </div>
+  <div>
+    <div class="baseline-label">Baseline — B site</div>
+    <div class="baseline-stat bl-b">{{ report.baseline_b }}%</div>
+    <div class="baseline-rounds">{{ report.n_b }} rounds</div>
+  </div>
+  <div style="color:#6b7280; font-size:0.83em; max-width:340px;">
+    These are the baselines every tendency below is measured against.
+    A condition is interesting when it moves these numbers by more than noise.
+  </div>
+</div>
+
+{% macro render_section(tendencies, cls) %}
+  {% for t in tendencies %}
+  <div class="tendency">
+    <span class="t-label">{{ t.label }}</span>
+    <span class="t-result {{ t.site }}">→ {{ t.site }} site &nbsp;{{ t.pct }}%</span>
+    <span class="t-rounds {% if t.small %}small-sample{% endif %}">{{ t.n }} rounds{% if t.small %} ⚠{% endif %}</span>
+    <span class="t-diff {% if t.diff > 0 %}pos{% elif t.diff < 0 %}neg{% else %}neu{% endif %}">
+      {{ '+' if t.diff > 0 else '' }}{{ t.diff }}% vs base
+    </span>
+    <div class="bar-wrap">
+      <div class="bar-bg bar-{{ cls }}">
+        <div class="bar-fill" style="width:{{ t.bar }}%"></div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{% if report.strong %}
+<div class="section">
+  <div class="section-title strong-title">Strong Tendencies</div>
+  {{ render_section(report.strong, 'strong') }}
+</div>
+{% endif %}
+
+{% if report.moderate %}
+<div class="section">
+  <div class="section-title moderate-title">Moderate Tendencies</div>
+  {{ render_section(report.moderate, 'moderate') }}
+</div>
+{% endif %}
+
+{% if report.weak %}
+<div class="section">
+  <div class="section-title weak-title">Weak / No Real Pattern</div>
+  {{ render_section(report.weak, 'weak') }}
+</div>
+{% endif %}
+
+{% if not report.strong and not report.moderate and not report.weak %}
+<p class="empty">Not enough data yet to surface meaningful patterns.</p>
+{% endif %}
+
+<div class="footer">
+  <a href="/">← Teams</a> &nbsp;·&nbsp;
+  <a href="/replay/g2/pearl">Replay viewer</a>
+</div>
+
+</body>
+</html>
