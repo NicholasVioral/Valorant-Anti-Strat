@@ -11,6 +11,7 @@ import statistics
 from pathlib import Path
 
 from flask import Flask, render_template, jsonify, request
+import insights as _insights
 
 app = Flask(__name__)
 DB_PATH = Path(__file__).parent / "valorant.db"
@@ -584,204 +585,19 @@ def api_replay_round(match_id, round_num):
 
 # ── Conditional probability report ───────────────────────────────────────────
 
-_AGENT_NAMES: dict[int, str] = {
-    1: "Breach", 2: "Raze", 3: "Cypher", 4: "Sova", 5: "Killjoy",
-    6: "Viper", 7: "Phoenix", 8: "Brimstone", 9: "Sage", 10: "Reyna",
-    11: "Omen", 12: "Jett", 13: "Skye", 14: "Yoru", 15: "Astra",
-    16: "KAY/O", 17: "Chamber", 18: "Neon", 19: "Fade", 20: "Harbor",
-    21: "Gekko", 22: "Deadlock", 23: "Iso", 25: "Clove", 26: "Vyse",
-    27: "Tejo", 28: "Waylay", 29: "Veto", 33: "Miks",
-}
-
-
-def get_conditional_report(team_name: str, map_name: str) -> dict:
-    conn = db()
-
-    # Matches on this map involving the team
-    matches = conn.execute("""
-        SELECT m.match_id, s.start_date, s.event_name,
-               CASE WHEN LOWER(s.team1_name)=LOWER(?) THEN 1 ELSE 2 END AS team_num,
-               s.team1_name, s.team2_name
-        FROM matches m JOIN series s ON s.series_id=m.series_id
-        WHERE m.map_name=?
-        AND (LOWER(s.team1_name)=LOWER(?) OR LOWER(s.team2_name)=LOWER(?))
-        ORDER BY s.start_date
-    """, (team_name, map_name, team_name, team_name)).fetchall()
-    matches = [dict(m) for m in matches]
-
-    if not matches:
-        conn.close()
-        return {}
-
-    # Per-match: player_id → {ign, agent}
-    player_map: dict[int, dict] = {}   # match_id → {pid: info}
-    pid_to_ign: dict[int, str] = {}
-    g2_pids: set[int] = set()
-    for m in matches:
-        mid, tnum = m["match_id"], m["team_num"]
-        players = conn.execute("""
-            SELECT mp.player_id, p.ign, mp.agent_id
-            FROM match_players mp
-            JOIN players p ON p.player_id=mp.player_id
-            WHERE mp.match_id=? AND mp.team_number=?
-        """, (mid, tnum)).fetchall()
-        pm = {}
-        for p in players:
-            pid = p["player_id"]
-            info = {"ign": p["ign"], "agent": _AGENT_NAMES.get(p["agent_id"], f"Agent{p['agent_id']}")}
-            pm[pid] = info
-            pid_to_ign[pid] = p["ign"]
-            g2_pids.add(pid)
-        player_map[mid] = pm
-
-    # All ATK rounds with known site_executed
-    rows = conn.execute("""
-        SELECT rs.match_id, rs.round_number, rs.economy_tier,
-               rs.score_self, rs.score_opp, rs.won_prev_round,
-               rs.ult_players_json, rs.site_executed, rs.won_round
-        FROM round_states rs
-        JOIN matches m ON m.match_id=rs.match_id
-        JOIN series s ON s.series_id=rs.series_id
-        WHERE m.map_name=?
-        AND rs.side='atk'
-        AND rs.site_executed IN ('A', 'B')
-        AND (
-            (LOWER(s.team1_name)=LOWER(?) AND rs.team_number=1)
-            OR (LOWER(s.team2_name)=LOWER(?) AND rs.team_number=2)
-        )
-        ORDER BY rs.match_id, rs.round_number
-    """, (map_name, team_name, team_name)).fetchall()
-
-    # Attach ult info and resolve player names
-    rounds = []
-    for r in rows:
-        r = dict(r)
-        mid = r["match_id"]
-        ult_ids = json.loads(r["ult_players_json"] or "[]")
-        pm = player_map.get(mid, {})
-        r["ult_igns"] = [pm[pid]["ign"] for pid in ult_ids if pid in pm and pid in g2_pids]
-        rounds.append(r)
-
-    # First blood per round
-    fb_map: dict[tuple, str] = {}
-    for m in matches:
-        mid, tnum = m["match_id"], m["team_num"]
-        fb_kills = conn.execute("""
-            SELECT round_number, killer_team, victim_team
-            FROM kills
-            WHERE match_id=? AND is_first_kill=1 AND side='atk'
-        """, (mid,)).fetchall()
-        for k in fb_kills:
-            key = (mid, k["round_number"])
-            fb_map[key] = "won" if k["killer_team"] == tnum else "lost"
-    for r in rounds:
-        r["first_blood"] = fb_map.get((r["match_id"], r["round_number"]))
-
-    conn.close()
-
-    if not rounds:
-        return {}
-
-    n_total = len(rounds)
-    n_a = sum(1 for r in rounds if r["site_executed"] == "A")
-    n_b = n_total - n_a
-    baseline_a = n_a / n_total
-    baseline_b = n_b / n_total
-
-    def analyze(label: str, subset: list) -> dict | None:
-        n = len(subset)
-        if n < 3:
-            return None
-        sub_a = sum(1 for r in subset if r["site_executed"] == "A")
-        sub_b = n - sub_a
-        pct_a = sub_a / n
-        pct_b = sub_b / n
-        if pct_a >= pct_b:
-            site, pct, diff = "A", pct_a, pct_a - baseline_a
-        else:
-            site, pct, diff = "B", pct_b, pct_b - baseline_b
-        sig = round(abs(diff) * n, 1)
-        # Scale bar against max possible significance (50% diff × n_total)
-        max_sig = 0.5 * n_total
-        bar = min(100, round(sig / max_sig * 100))
-        small = n < 6   # flag low-confidence readings
-        return {
-            "label": label,
-            "site":  site,
-            "pct":   round(pct * 100),
-            "n":     n,
-            "diff":  round(diff * 100),
-            "sig":   sig,
-            "bar":   bar,
-            "small": small,
-        }
-
-    tendencies = []
-
-    def add(label, subset):
-        t = analyze(label, subset)
-        if t:
-            tendencies.append(t)
-
-    # Economy
-    for tier, pretty in [("eco", "Eco round"), ("half", "Half-buy"), ("full", "Full buy"), ("heavy", "Heavy buy")]:
-        add(pretty, [r for r in rounds if r["economy_tier"] == tier])
-
-    # Previous round result
-    add("Coming off a win",  [r for r in rounds if r["won_prev_round"] == 1])
-    add("Coming off a loss", [r for r in rounds if r["won_prev_round"] == 0])
-
-    # Score state
-    add("Leading on score",  [r for r in rounds if r["score_self"] > r["score_opp"]])
-    add("Trailing on score", [r for r in rounds if r["score_self"] < r["score_opp"]])
-    add("Score tied",        [r for r in rounds if r["score_self"] == r["score_opp"]])
-
-    # First blood
-    add("Win first blood",  [r for r in rounds if r["first_blood"] == "won"])
-    add("Lose first blood", [r for r in rounds if r["first_blood"] == "lost"])
-
-    # Ult per player
-    all_igns = sorted({pid_to_ign[pid] for pid in g2_pids if pid in pid_to_ign})
-    for ign in all_igns:
-        add(f"{ign} has ult", [r for r in rounds if ign in r["ult_igns"]])
-
-    # Pistol rounds (round 1 and 13)
-    add("Pistol round",      [r for r in rounds if r["round_number"] in (1, 13)])
-
-    tendencies.sort(key=lambda t: t["sig"], reverse=True)
-    # Thresholds scale with dataset: strong needs ≥15% diff × ≥5 rounds, moderate ≥10% diff
-    strong   = [t for t in tendencies if t["sig"] >= 2.0]
-    moderate = [t for t in tendencies if 0.8 <= t["sig"] < 2.0]
-    weak     = [t for t in tendencies if t["sig"] < 0.8]
-
-    opponents = []
-    for m in matches:
-        opp = m["team2_name"] if team_name.lower() in (m["team1_name"] or "").lower() \
-              else m["team1_name"]
-        if opp and opp not in opponents:
-            opponents.append(opp)
-
-    return {
-        "team":        team_name,
-        "map":         map_name,
-        "total":       n_total,
-        "n_a":         n_a,
-        "n_b":         n_b,
-        "baseline_a":  round(baseline_a * 100),
-        "baseline_b":  round(baseline_b * 100),
-        "strong":      strong,
-        "moderate":    moderate,
-        "weak":        weak,
-        "n_matches":   len(matches),
-        "opponents":   opponents,
-    }
-
-
 @app.route("/report/<path:team>/<path:map_name>")
 def report_page(team, map_name):
-    report = get_conditional_report(team, map_name)
+    report = _insights.find_insights(team, map_name)
     if not report:
         return f"No data found for '{team}' on {map_name}.", 404
+    return render_template("report.html", report=report)
+
+
+@app.route("/report/<path:team>")
+def report_page_all_maps(team):
+    report = _insights.find_insights(team)
+    if not report:
+        return f"No data found for '{team}'.", 404
     return render_template("report.html", report=report)
 
 

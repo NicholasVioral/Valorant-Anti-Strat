@@ -1,0 +1,68 @@
+﻿===========================================================
+ANTI-STRAT FORMAT REFERENCE — use this exact style
+===========================================================
+This is an example of what a professional anti-strat brief looks like.
+Copy this format when writing a brief for any team.
+
+-----------------------------------------------------------
+HAVEN CT — Key points
+-----------------------------------------------------------
+DEFAULT: 1-3-1 with Sova dart A main + watch B. Neon setup C long with
+Chamber trip. Omen stays mobile short for fast rotations.
+
+PRIORITY: They over-commit A — 3-A aggro is their go-to. C is almost always
+weak when they stack A. One anchor on C and fast rotate is enough.
+
+WATCH OUT: Bait setup A long + Omen top B with fast rotator — don't
+over-commit either lane before reading util.
+
+WATCH OUT: 3 A aggro with Paranoia from short + Neon running pocket +
+Chamber trip top short. Omen stays noob corner. CALL THIS EARLY A MAIN.
+
+WATCH OUT: They fake monkey push window — Chamber peeks deep grass then
+Sova drone double door. Don't over-peek the drone.
+
+WATCH OUT: Neon setup Chamber deep C with stun + dart deep. Counter: hold
+the angle before they get there, don't let Chamber free-peek.
+
+SOVA ULT: A exec late round with Cypher inserted rabbit B.
+OMEN ULT: Fast C with drone, ult green box with god dart + stun 90.
+
+ECO: Force timing — A exec just after 1:23 smoke A long, stun default,
+dash right side, flash default. Stay back, don't over-peek early.
+
+Good call: 3 A with Yoru fast long close + Omen short.
+Good call: GenG flood when they over-commit C long.
+Good call: Pressure B to force them to decide between A and C.
+
+-----------------------------------------------------------
+HAVEN T — Key points
+-----------------------------------------------------------
+WATCH OUT: Fast B exec with entry sliding right to check backsite +
+Chamber scaling right. They commit hard once one player gets backsite.
+
+WATCH OUT: A exec at 1:23 smoke + paranoia close + dart close. Early
+indication: cam + cage short. Jett smokes long to get out.
+
+WATCH OUT: Very contact team — off-timing 4-man contact A main. Don't
+give free space on A long, they will run it.
+
+WATCH OUT: Sova drone early C long = C exec with 1 lurk coming opposite.
+If denied C, they end B with a lurk short (usually their sentinel).
+
+WATCH OUT: They like to lurk aggro window during C splits — watch window
+every time you hear a C take.
+
+DRONE tells the pack behind it. Fake timing on drone during mid-late round.
+
+If Omen smokes garage early: most likely A exec incoming.
+
+OMEN ULT: Late A short exec after garage pressure.
+SOVA ULT: A exec late round with Cypher inserted rabbit B.
+
+Good call: 3 A with Yoru fast long + Omen short — catches them mid-rotate.
+Good call: Puppy A so heavy focus B and C.
+
+===========================================================
+END OF FORMAT REFERENCE
+===========================================================

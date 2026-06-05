@@ -20,6 +20,9 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
+import insights  as _insight_engine
+import questions as _questions
+
 DB_PATH       = Path(__file__).parent / "valorant.db"
 EXAMPLES_DIR  = Path(__file__).parent / "coaching_examples"
 
@@ -983,6 +986,42 @@ def build_context(team_name, map_filter=None, series_id=None):
                  f"{total_wins}W-{total_maps - total_wins}L map record")
     lines.append("")
 
+    # ── Conditional tendencies (ranked by significance) — LEAD with this ─────
+    lines.append("═" * 60)
+    lines.append("CONDITIONAL TENDENCIES  (strongest decision patterns, ranked by z-score)")
+    lines.append("Format: Given [condition] -> executes [site] X%  (baseline Y%, n=rounds)")
+    lines.append("New conditions: first-contact location, per-player FB, contact timing, kill lead.")
+    lines.append("Only statistically significant patterns shown (n>=4, delta>=10pp, z>=1.2).")
+    lines.append("═" * 60)
+    _single_map = map_filter[0] if map_filter and len(map_filter) == 1 else None
+    _cond_data  = _insight_engine.find_insights(team_name, _single_map)
+    if _cond_data and _cond_data.get("insights"):
+        _ins_list = _cond_data["insights"]
+        lines.append(
+            f"  {_cond_data['total']} ATK rounds  |  "
+            f"Baseline A: {_cond_data['baseline_a']}%  /  B: {_cond_data['baseline_b']}%  |  "
+            f"Plant rate: {_cond_data['baseline_plant_rate']}%"
+        )
+        for ins in _ins_list:
+            stars = ins["stars"].replace("★", "*")
+            plant_note = (
+                f"  plant {ins['plant_rate']}% (base {ins['baseline_plant_rate']}%)"
+                if abs(ins['plant_rate'] - ins['baseline_plant_rate']) >= 10 else ""
+            )
+            lines.append(
+                f"  #{ins['rank']:2d} [{ins['category']}]  "
+                f"Given {ins['label']}"
+            )
+            lines.append(
+                f"      -> {ins['site']} site {ins['conditional_pct']}%  "
+                f"(baseline {ins['baseline_pct']}%, n={ins['n']}, "
+                f"{'+' if ins['delta'] > 0 else ''}{ins['delta']}pp, z={ins['z']})"
+                f"{plant_note}"
+            )
+    else:
+        lines.append("  No significant conditional tendencies found in current dataset.")
+    lines.append("")
+
     # ── Map pool ──────────────────────────────────────────────────────────────
     lines.append("MAP POOL:")
     for m in map_pool:
@@ -992,13 +1031,13 @@ def build_context(team_name, map_filter=None, series_id=None):
     lines.append("")
 
     # ── Tactical pre-analysis ─────────────────────────────────────────────────
-    insights = _derive_tactical_insights(
+    tactical = _derive_tactical_insights(
         team_name, map_pool, site_rows, timing_rows, player_rows, series_count
     )
     lines.append("═" * 60)
     lines.append("PRE-ANALYZED TACTICAL OBSERVATIONS")
     lines.append("═" * 60)
-    lines.append(insights)
+    lines.append(tactical)
 
     # ── Weapon tendencies ─────────────────────────────────────────────────────
     atk_weapons: dict = defaultdict(int)
@@ -1016,12 +1055,6 @@ def build_context(team_name, map_filter=None, series_id=None):
         top_def = sorted(def_weapons.items(), key=lambda x: -x[1])[:5]
         lines.append("DEF WEAPONS: " + " | ".join(f"{w}: {c}" for w, c in top_def))
     lines.append("")
-
-    # ── Player opening route frequencies ─────────────────────────────────────
-    if route_data:
-        for line in _format_route_analysis(route_data):
-            lines.append(line)
-        lines.append("")
 
     # ── Opening pattern → site execute correlation ────────────────────────────
     if pattern_data:
@@ -1041,6 +1074,72 @@ def build_context(team_name, map_filter=None, series_id=None):
             lines.append("")
     else:
         lines.append("(No 2D position data — run collection to populate)")
+
+    # ── Q1: Ult availability ──────────────────────────────────────────────────
+    ult_res = _questions.ult_behavior(team_name, _single_map)
+    lines.append("═" * 60)
+    lines.append("ULT PATTERNS  [status: " + ult_res["status"] + "]")
+    lines.append("═" * 60)
+    if ult_res["findings"]:
+        lines.append(f"  Baseline: A {ult_res['baseline_a']}%  B {ult_res['baseline_b']}%"
+                     f"  |  ATK rounds: {ult_res['atk_rounds']}")
+        for f in ult_res["findings"]:
+            lines.append(f"  {f['label']}  —  {f['ult_n']} rounds with ult")
+            lines.append(f"    Site: A {f['a_pct']}%  B {f['b_pct']}%"
+                         f"  (baseline A {f['baseline_a']}%  B {f['baseline_b']}%,"
+                         f" Δ {'+' if f['delta_a'] >= 0 else ''}{f['delta_a']}pp A)")
+            if f["fake_rate"] is not None and f["baseline_fake"] is not None:
+                lines.append(f"    Fake rate: {f['fake_rate']}%"
+                             f"  (baseline {f['baseline_fake']}%, n={f['fake_n']})")
+    else:
+        lines.append(f"  {ult_res['reason']}")
+    lines.append("")
+
+    # ── Q2: One orb off ult ───────────────────────────────────────────────────
+    orb_res = _questions.one_orb_off_ult(team_name, _single_map)
+    lines.append("═" * 60)
+    lines.append("ONE ORB OFF ULT PATTERNS  [status: " + orb_res["status"] + "]")
+    lines.append("═" * 60)
+    lines.append(f"  {orb_res['reason']}")
+    lines.append("")
+
+    # ── Q4/Q5: Defensive weapon patterns ─────────────────────────────────────
+    for wpn in ("Judge", "Operator"):
+        wpn_res = _questions.weapon_def_patterns(team_name, wpn, _single_map)
+        lines.append("═" * 60)
+        lines.append(f"DEFENSIVE {wpn.upper()} PATTERNS  [status: {wpn_res['status']}]")
+        lines.append("═" * 60)
+        if wpn_res["findings"]:
+            lines.append(f"  Total DEF kills with {wpn}: {wpn_res['total_kills']}")
+            for f in wpn_res["findings"]:
+                zones_str = "  ".join(
+                    f"{z} {n}×" for z, n in
+                    sorted(f["zones"].items(), key=lambda x: -x[1])
+                )
+                lines.append(f"  {f['label']}  on {f['map']}:  {f['total']} kills")
+                lines.append(f"    Zone: {zones_str}")
+                lines.append(f"    Avg timing: {f['avg_timing']}s into round")
+        else:
+            lines.append(f"  {wpn_res['reason']}")
+        lines.append("")
+
+    # ── Q3: Defensive stacking ────────────────────────────────────────────────
+    stack_res = _questions.def_stacking(team_name, _single_map)
+    lines.append("═" * 60)
+    lines.append("LOW-MONEY DEFENSIVE STACKS  [status: " + stack_res["status"] + "]")
+    lines.append("═" * 60)
+    if stack_res["findings"]:
+        for map_n, counts in stack_res["findings"].items():
+            total = counts["total"]
+            lines.append(f"  {map_n}  (n={total} eco/half DEF rounds with positions)")
+            for cls in ("A-heavy", "B-heavy", "Mid-heavy", "Default"):
+                n = counts[cls]
+                if n:
+                    pct = round(n / total * 100)
+                    lines.append(f"    {cls:<12}  {n}/{total}  ({pct}%)")
+    else:
+        lines.append(f"  {stack_res['reason']}")
+    lines.append("")
 
     return "\n".join(lines)
 
@@ -1121,8 +1220,10 @@ Rules:
 - Only write about {maps_str}. Do NOT write about other maps.
 - Use EXACT Pearl callout names from the data: B Hall, B Screen, B Main, B Ramp, B site, B Tower, B Tunnel, B Link, Mid Connector, Mid Doors, Mid Plaza, Mid Shops, A Link, A Art, A site, A Flowers, A Secret, A Dugout, A Main, A Restaurant.
 - Name players by short IGN (e.g. JAWGEMO, trent, leaf, BABYBAY, valyn).
-- ALWAYS cite frequency from PLAYER OPENING ROUTES (e.g. "8/12 rounds" or "67% of ATK rounds").
-- Every WATCH OUT must reference a specific round pattern or route frequency from the data.
+- ALWAYS cite statistics from CONDITIONAL TENDENCIES, OPENING PATTERN RECOGNITION, ULT AVAILABILITY, DEFENSIVE WEAPON PATTERNS, or DEFENSIVE STACKING sections.
+- For CT sections: reference DEFENSIVE WEAPON PATTERNS (Judge/Operator zones and timing) and DEFENSIVE STACKING (low-economy stack tendencies).
+- For ATK sections: reference ULT AVAILABILITY (which player's ult shifts site execution) alongside CONDITIONAL TENDENCIES.
+- Every WATCH OUT must reference a specific pattern or frequency from the data.
 - Do NOT invent numbers. If data is limited, say "small sample" but still use what's there.
 - No generic advice — every sentence must be actionable and specific to THIS team's patterns."""
 
@@ -1295,186 +1396,266 @@ def generate_report_no_llm(team_name, context_str, for_team="FURIA", map_filter=
 
 # ── Document printer ─────────────────────────────────────────────────────────
 
-def print_document(context: str, report: str, team: str, vs: str,
-                   series_meta: dict, map_filter=None):
-    W = 70
-    def rule(char="="):   print(char * W)
-    def thin():           print("-" * W)
-    def blank():          print()
-    def hdr(txt):
-        print(); rule(); print(f"  {txt}"); rule()
-    def sub(txt):
-        print(); print(f"  {txt}"); thin()
-
-    rule("=")
-    title = f"MATCH ANALYSIS  —  {team.upper()}"
-    pad   = (W - len(title)) // 2
-    print(" " * pad + title)
-    if series_meta:
-        t1   = series_meta.get("team1_name", "")
-        t2   = series_meta.get("team2_name", "")
-        evt  = series_meta.get("event_name", "")
-        date = (series_meta.get("start_date") or "")[:10]
-        sub_title = f"{t1}  vs  {t2}   |   {evt}   |   {date}"
-        pad2 = (W - len(sub_title)) // 2
-        print(" " * max(pad2, 0) + sub_title)
-    if map_filter:
-        print(f"  Map: {', '.join(map_filter)}")
-    rule("=")
-    blank()
-
-    # ── Parse context sections ────────────────────────────────────────────────
-    lines = context.splitlines()
-    in_routes = False; in_patterns = False; in_rounds = False
-    pool_lines = []; player_lines = []; site_lines = []
-    timing_lines = []; weapon_lines = []; route_lines = []
-    pattern_lines = []; round_lines = []
-
-    i = 0
-    while i < len(lines):
-        l = lines[i]
-        if l.startswith("MAP POOL:"):
-            i += 1
-            while i < len(lines) and lines[i].strip():
-                pool_lines.append(lines[i].strip())
-                i += 1
-        elif l.startswith("ATTACK TEMPO:"):
-            timing_lines.append(l.strip())
-            i += 1
-            while i < len(lines) and lines[i].strip() and not lines[i].startswith(("SITE", "PLAYER", "ATK ", "DEF ")):
-                timing_lines.append(lines[i].strip())
-                i += 1
-        elif l.startswith("SITE TENDENCIES:"):
-            i += 1
-            while i < len(lines) and lines[i].strip() and not lines[i].startswith("PLAYER"):
-                site_lines.append(lines[i].strip())
-                i += 1
-        elif l.startswith("PLAYER ROLES"):
-            i += 1
-            while i < len(lines) and lines[i].strip() and not lines[i].startswith(("ATK WEAPON", "DEF WEAPON", chr(9552))):
-                player_lines.append(lines[i].strip())
-                i += 1
-        elif l.startswith("ATK WEAPONS:") or l.startswith("DEF WEAPONS:"):
-            weapon_lines.append(l.strip())
-            i += 1
-        elif "PLAYER OPENING ROUTES" in l:
-            in_routes = True; i += 1
-        elif "OPENING PATTERN RECOGNITION" in l:
-            in_routes = False; in_patterns = True; i += 1
-        elif "2D REPLAY" in l:
-            in_patterns = False; in_rounds = True; i += 1
-        elif in_routes and l.strip() and not l.strip().startswith(chr(9552)) and not l.strip().startswith("Shows"):
-            route_lines.append(l)
-            i += 1
-        elif in_patterns and l.strip() and not l.strip().startswith(chr(9552)) and "position predicts" not in l:
-            pattern_lines.append(l)
-            i += 1
-        elif in_rounds and l.strip() and not l.strip().startswith(chr(9552)):
-            round_lines.append(l)
-            i += 1
+def _wrap(text: str, width: int = 64, indent: str = "  ") -> list[str]:
+    """Word-wrap text to width, returning lines with indent applied."""
+    words = text.split()
+    lines, line = [], ""
+    for w in words:
+        if len(line) + len(w) + 1 > width and line:
+            lines.append(indent + line)
+            line = w
         else:
-            i += 1
+            line = (line + " " + w).lstrip()
+    if line:
+        lines.append(indent + line)
+    return lines
 
-    # ── Map Pool ──────────────────────────────────────────────────────────────
-    sub("MAP POOL")
-    for pl in pool_lines:
-        print(f"    {pl}")
 
-    # ── Player Roster ─────────────────────────────────────────────────────────
-    sub("PLAYER ROSTER")
-    hdr_row = f"  {'PLAYER':<14}  {'DMG/RD':>6}  {'FK%':>4}  {'FD%':>4}  {'PLANTS':>6}  ROLE"
-    print(hdr_row)
-    print(f"  {'-'*14}  {'-'*6}  {'-'*4}  {'-'*4}  {'-'*6}  ----")
-    import re as _re
-    for pl in player_lines:
-        if "dmg/rd" in pl:
-            m = _re.match(r"\s*(\S+):\s*(\d+) dmg/rd \| FK (\d+)% \| FD (\d+)% \| (\d+) plants\s*(?:->|→)\s*(.+)", pl)
-            if m:
-                ign, dmg, fk, fd, plants, role = m.groups()
-                print(f"  {ign:<14}  {dmg:>6}  {fk:>3}%  {fd:>3}%  {plants:>6}  {role}")
-    blank()
+def print_document(data: dict, team: str, vs: str,
+                   series_meta: dict, map_filter=None):
+    """
+    Three-section report:  STRONGEST TENDENCIES  /  RECURRING PATTERNS  /  SUPPORTING EVIDENCE
+    Takes the dict returned by insights.find_insights() directly — no context string needed.
+    """
+    W = 70
+    def rule(c="="): print(c * W)
+    def thin():      print("-" * W)
+    def blank():     print()
+    def section(txt):
+        blank(); rule(); print(f"  {txt}"); thin(); blank()
 
-    # ── Weapon Usage ──────────────────────────────────────────────────────────
-    sub("WEAPON USAGE")
-    for wl in weapon_lines:
-        print(f"  {wl}")
+    insights_list = data.get("insights", [])
+    patterns      = data.get("patterns", [])
+    breakdowns    = data.get("breakdowns", {})
+    total         = data["total"]
+    n_a, n_b      = data["n_a"], data["n_b"]
+    ba, bb        = data["baseline_a"], data["baseline_b"]
+    plant_rate    = data["baseline_plant_rate"]
+    map_label     = ", ".join(map_filter) if map_filter else data.get("map", "")
 
-    # ── Attack Timing ─────────────────────────────────────────────────────────
-    sub("ATTACK TIMING")
-    for tl in timing_lines:
-        print(f"  {tl}")
+    # ── Header ────────────────────────────────────────────────────────────────
+    rule()
+    title = f"MATCH ANALYSIS  —  {team.upper()}"
+    print(" " * ((W - len(title)) // 2) + title)
+    if series_meta:
+        t1, t2 = series_meta.get("team1_name",""), series_meta.get("team2_name","")
+        evt    = series_meta.get("event_name","")
+        date   = (series_meta.get("start_date") or "")[:10]
+        sub    = f"{t1}  vs  {t2}   |   {evt}   |   {date}"
+        print(" " * max((W - len(sub)) // 2, 0) + sub)
+    print(f"  {map_label}  ·  {total} ATK rounds  ·  "
+          f"Baseline A {ba}%  B {bb}%")
+    rule()
 
-    # ── Site Execution ────────────────────────────────────────────────────────
-    sub("SITE EXECUTION TENDENCIES")
-    for sl in site_lines:
-        print(f"  {sl}")
+    # ── Section 1: STRONGEST TENDENCIES ──────────────────────────────────────
+    section("STRONGEST TENDENCIES")
 
-    # ── Player Opening Routes ─────────────────────────────────────────────────
-    sub("PLAYER OPENING ROUTES  (position at ~10s into ATK / DEF rounds)")
-    cur_map = ""
-    for rl in route_lines:
-        stripped = rl.strip()
-        if stripped.startswith("[") and "]" in stripped:
-            cur_map = stripped
-            print(f"\n  {cur_map}")
-        elif stripped.startswith("ATK routes") or stripped.startswith("DEF routes"):
-            print(f"\n    {stripped}")
-        elif stripped:
-            print(f"    {stripped}")
-
-    # ── Opening Pattern Recognition ───────────────────────────────────────────
-    sub("OPENING PATTERN RECOGNITION")
-    cur_map = ""
-    for pl in pattern_lines:
-        stripped = pl.strip()
-        if stripped.startswith("[") and "]" in stripped:
-            cur_map = stripped
-            print(f"\n  {cur_map}")
-        elif stripped.startswith("PLAYER OPENING") or stripped.startswith("TEAM SIDE"):
-            print(f"\n    {stripped}")
-        elif stripped:
-            print(f"    {stripped}")
-
-    # ── Round-by-Round Setups ─────────────────────────────────────────────────
-    sub("ROUND-BY-ROUND ATK SETUPS")
-    cur_map = ""
-    for rl in round_lines:
-        stripped = rl.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            if cur_map:
-                blank()
-            cur_map = stripped
-            print(f"\n  Map: {cur_map}")
-            thin()
-        elif stripped.startswith("R") and "[" in stripped and "]" in stripped:
-            print(f"\n  {stripped}")
-        elif stripped.startswith("OPEN:"):
-            # wrap each player on its own indented line
-            players = stripped.replace("OPEN:", "").split(" | ")
-            print(f"    Opening setup:")
-            for p in players:
-                print(f"      {p.strip()}")
-        elif stripped.startswith("LATE:"):
-            print(f"    Late-round: {stripped.replace('LATE:', '').strip()}")
-
-    # ── AI Brief ─────────────────────────────────────────────────────────────
-    hdr(f"COUNTER-STRAT BRIEF  |  Prepared for {vs.upper()}")
-    blank()
-    # Clean up and print the report with proper indentation
-    for line in report.splitlines():
-        if line.strip().startswith("###"):
-            blank(); thin()
-            print(f"  {line.strip().replace('###', '').strip().upper()}")
-            thin()
-        elif line.strip().startswith("WATCH OUT:"):
-            print(f"    [!] {line.strip()[len('WATCH OUT:'):].strip()}")
-        elif line.strip().startswith("PRIORITY:"):
+    if not insights_list:
+        print("  No significant tendencies found.")
+        print(f"  (Requires n≥5 per condition, ≥10pp swing from baseline, z≥1.2)")
+        blank()
+    else:
+        for ins in insights_list:
+            conf    = ins["confidence"]
+            outcome = f"→ {ins['site']} Finish  {ins['conditional_pct']}%"
+            meta    = (f"Baseline {ins['baseline_pct']}%"
+                       f"  ·  {ins['n']} rounds"
+                       f"  ·  Confidence: {conf}")
+            label   = ins["label"][0].upper() + ins["label"][1:]
+            print(f"  {ins['rank']}.  {label}")
+            print(f"     {outcome}")
+            print(f"     {meta}")
             blank()
-            print(f"  >> PRIORITY: {line.strip()[len('PRIORITY:'):].strip()}")
-        elif line.strip().startswith("Good call:"):
-            print(f"  >> GOOD CALL: {line.strip()[len('Good call:'):].strip()}")
-        elif line.strip():
-            print(f"  {line.strip()}")
+
+    # ── Section 2: RECURRING PATTERNS ────────────────────────────────────────
+    section("RECURRING PATTERNS")
+
+    if not patterns:
+        print("  Insufficient data to derive patterns.")
+        blank()
+    else:
+        for sent in patterns:
+            for i, line in enumerate(_wrap(sent, width=64)):
+                prefix = "  *" if i == 0 else "   "
+                print(prefix + line)
+            blank()
+
+    # ── Section 3: SUPPORTING EVIDENCE ───────────────────────────────────────
+    section("SUPPORTING EVIDENCE")
+
+    print(f"  Baseline: A {ba}% ({n_a}/{total} rounds)"
+          f"  |  B {bb}% ({n_b}/{total} rounds)"
+          f"  |  Plant rate {plant_rate}%")
+    blank()
+
+    for bd_name, bd in breakdowns.items():
+        label  = bd.get("label", bd_name)
+        values = bd.get("data", {})
+        if not values:
+            continue
+        print(f"  {label}")
+        for key, counts in values.items():
+            n_sub = counts["n"]
+            a_cnt = counts["a"]
+            b_cnt = counts["b"]
+            a_pct = round(a_cnt / n_sub * 100)
+            b_pct = 100 - a_pct
+            if a_cnt > b_cnt:
+                lead = f"{a_pct}% A"
+            elif b_cnt > a_cnt:
+                lead = f"{b_pct}% B"
+            else:
+                lead = "50/50"
+            note = "  ⚠ small sample" if n_sub < 5 else ""
+            print(f"    {key:<14}  n={n_sub:2d}:  "
+                  f"A {a_cnt:2d}  B {b_cnt:2d}   →  {lead}{note}")
+        blank()
+
+    rule()
+    blank()
+
+    _single_map = map_filter[0] if map_filter and len(map_filter) == 1 else None
+
+    def _status_line(status: str) -> str:
+        labels = {
+            "found":                "Found",
+            "no_results":           "No Results",
+            "insufficient_sample":  "Insufficient Sample",
+            "data_missing":         "Data Missing",
+            "not_implemented":      "Not Implemented",
+        }
+        return f"  Status: {labels.get(status, status)}"
+
+    # ── Section 4: ULT-BASED TENDENCIES ──────────────────────────────────────
+    ult_res = _questions.ult_behavior(team, _single_map)
+    section("ULT PATTERNS")
+    print(_status_line(ult_res["status"]))
+    blank()
+    if ult_res["status"] != "found":
+        print(f"  Reason:")
+        for line in _wrap(ult_res["reason"], width=62):
+            print(line)
+        if ult_res.get("ult_counts"):
+            nonzero = {p: n for p, n in ult_res["ult_counts"].items() if n > 0}
+            if nonzero:
+                blank()
+                print(f"  Ult rounds detected (below threshold of {ult_res['threshold']}):")
+                for p, n in sorted(nonzero.items(), key=lambda x: -x[1]):
+                    print(f"    {p}: {n} round(s)")
+    else:
+        print(f"  Baseline: A {ult_res['baseline_a']}%  B {ult_res['baseline_b']}%"
+              f"  |  ATK rounds: {ult_res['atk_rounds']}")
+        blank()
+        for f in ult_res["findings"]:
+            print(f"  {f['label']}  ({f['ult_n']} rounds with ult)")
+            print(f"  Ult available: A {f['a_pct']}%  B {f['b_pct']}%")
+            print(f"  Baseline:      A {f['baseline_a']}%  B {f['baseline_b']}%"
+                  f"  (Δ {'+' if f['delta_a'] >= 0 else ''}{f['delta_a']}pp"
+                  f" toward {'A' if f['delta_a'] >= 0 else 'B'})")
+            if f["fake_rate"] is not None and f["baseline_fake"] is not None:
+                print(f"  Fake rate: {f['fake_rate']}%"
+                      f"  (baseline {f['baseline_fake']}%, n={f['fake_n']})")
+            blank()
+    rule()
+    blank()
+
+    # ── Section 5: ONE ORB OFF ULT ────────────────────────────────────────────
+    orb_res = _questions.one_orb_off_ult(team, _single_map)
+    section("ONE ORB OFF ULT PATTERNS")
+    print(_status_line(orb_res["status"]))
+    blank()
+    print(f"  Reason:")
+    for line in _wrap(orb_res["reason"], width=62):
+        print(line)
+    rule()
+    blank()
+
+    # ── Section 6: DEFENSIVE WEAPON PATTERNS ─────────────────────────────────
+    for wpn in ("Judge", "Operator"):
+        wpn_res = _questions.weapon_def_patterns(team, wpn, _single_map)
+        section(f"DEFENSIVE {wpn.upper()} PATTERNS")
+        print(_status_line(wpn_res["status"]))
+        blank()
+        if wpn_res["status"] != "found":
+            print(f"  Reason:")
+            for line in _wrap(wpn_res["reason"], width=62):
+                print(line)
+        else:
+            print(f"  Total DEF kills with {wpn}: {wpn_res['total_kills']}")
+            blank()
+            for f in wpn_res["findings"]:
+                zones_str = "  ".join(
+                    f"{z} {n}×" for z, n in
+                    sorted(f["zones"].items(), key=lambda x: -x[1])
+                )
+                small = "  ⚠ small sample" if f["small"] else ""
+                print(f"  {f['label']}  —  {f['map']}  ({f['total']} kills{small})")
+                print(f"  Zone: {zones_str}")
+                print(f"  Avg timing: {f['avg_timing']}s into round")
+                blank()
+        rule()
+        blank()
+
+    # ── Section 7: DEFENSIVE STACKING ────────────────────────────────────────
+    stack_res = _questions.def_stacking(team, _single_map)
+    section("LOW-MONEY DEFENSIVE STACKS")
+    print(_status_line(stack_res["status"]))
+    blank()
+    if stack_res["status"] != "found":
+        print(f"  Reason:")
+        for line in _wrap(stack_res["reason"], width=62):
+            print(line)
+        if stack_res.get("eco_half_total", 0) > 0:
+            blank()
+            print(f"  Eco/half DEF rounds found: {stack_res['eco_half_total']}")
+            print(f"  Rounds with position data: {stack_res.get('rounds_with_pos', 0)}")
+            if stack_res.get("maps_no_pos"):
+                print(f"  Maps without positions: {', '.join(stack_res['maps_no_pos'])}")
+    else:
+        for map_n, counts in stack_res["findings"].items():
+            total = counts["total"]
+            print(f"  {map_n}  (n={total} eco/half rounds with position data)")
+            for cls in ("A-heavy", "B-heavy", "Mid-heavy", "Default"):
+                n = counts[cls]
+                if n:
+                    pct = round(n / total * 100)
+                    print(f"    {cls:<12}  {n}/{total}  ({pct}%)")
+            blank()
+    rule()
+    blank()
+
+
+# ── Legacy context-based document printer (used only by --brief mode) ─────────
+
+def _print_brief(context: str, report: str, team: str, vs: str,
+                 series_meta: dict, map_filter=None):
+    """Append the LLM-generated counter-strat brief to stdout."""
+    W = 70
+    def rule(c="="): print(c * W)
+    def thin():      print("-" * W)
+    def blank():     print()
+
+    rule()
+    title = f"COUNTER-STRAT BRIEF  |  Prepared for {vs.upper()}"
+    print(" " * max((W - len(title)) // 2, 0) + title)
+    rule(); blank()
+
+    for line in report.splitlines():
+        s = line.strip()
+        if not s:
+            blank()
+        elif s.startswith("###"):
+            blank(); thin()
+            print(f"  {s.replace('###','').strip().upper()}")
+            thin()
+        elif s.startswith("WATCH OUT:"):
+            print(f"    [!] {s[len('WATCH OUT:'):].strip()}")
+        elif s.startswith("PRIORITY:"):
+            blank(); print(f"  >> PRIORITY: {s[len('PRIORITY:'):].strip()}")
+        elif s.startswith("Good call:"):
+            print(f"  >> GOOD CALL: {s[len('Good call:'):].strip()}")
+        else:
+            print(f"  {s}")
     blank(); rule()
 
 
@@ -1486,56 +1667,59 @@ def main():
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     ap = argparse.ArgumentParser(
-        description="Generate anti-strat report from DB using local Ollama LLM"
+        description="Valorant tendency report — DATA → PATTERN → EVIDENCE"
     )
-    ap.add_argument("--team",    required=True,          help="Team to analyze")
-    ap.add_argument("--vs",      default="FURIA",        help="Your team name (default: FURIA)")
-    ap.add_argument("--map",     nargs="+",              help="Filter to specific map(s)")
-    ap.add_argument("--maps",    nargs="+",              help="Alias for --map")
-    ap.add_argument("--series",  type=int,               help="Filter to one specific series ID")
-    ap.add_argument("--model",   default="qwen2.5:14b",  help="Ollama model")
-    ap.add_argument("--no-ai",   action="store_true",    help="Print data only, no AI report")
-    ap.add_argument("--no-llm",  action="store_true",    help="Structured report without Ollama")
-    ap.add_argument("--raw",     action="store_true",    help="Print raw context dump instead of formatted doc")
-    ap.add_argument("--save",    action="store_true",    help="Save report to a .txt file")
+    ap.add_argument("--team",    required=True,         help="Team to analyze")
+    ap.add_argument("--vs",      default="FURIA",       help="Your team (used in brief header)")
+    ap.add_argument("--map",     nargs="+",             help="Filter to specific map(s)")
+    ap.add_argument("--maps",    nargs="+",             help="Alias for --map")
+    ap.add_argument("--series",  type=int,              help="Filter to one series ID")
+    ap.add_argument("--model",   default="qwen2.5:14b", help="Ollama model (--brief only)")
+    ap.add_argument("--brief",   action="store_true",   help="Append LLM counter-strat brief (requires Ollama)")
+    ap.add_argument("--save",    action="store_true",   help="Save report to .txt file")
+    # Legacy aliases — kept for backward compatibility, map to default behaviour
+    ap.add_argument("--no-ai",  action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--no-llm", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--raw",    action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
-    map_filter = args.map or args.maps
-    sid        = args.series
+    map_filter  = args.map or args.maps
+    _single_map = map_filter[0] if map_filter and len(map_filter) == 1 else None
+    sid         = args.series
 
-    print(f"  Building context for {args.team}...", flush=True)
-    context     = build_context(args.team, map_filter=map_filter, series_id=sid)
+    print(f"  Analyzing {args.team}...", flush=True)
+    data        = _insight_engine.find_insights(args.team, _single_map)
     series_meta = _get_series_meta(db(), sid) if sid else {}
 
-    if args.no_ai or args.raw:
-        print(context)
+    if not data:
+        print(f"  No data found for '{args.team}'.")
+        if map_filter:
+            print(f"  (Filtered to map: {', '.join(map_filter)})")
         return
 
-    if args.no_llm:
-        report = generate_report_no_llm(args.team, context, for_team=args.vs, map_filter=map_filter)
-    else:
-        print(f"  Asking {args.model} to generate brief... (30-90s)", flush=True)
-        report = generate_report(args.team, context, model=args.model, for_team=args.vs)
+    print_document(data, args.team, args.vs, series_meta, map_filter)
 
-    print_document(context, report, args.team, args.vs, series_meta, map_filter)
+    if args.brief:
+        print(f"\n  Asking {args.model} for brief... (30-90s)", flush=True)
+        context = build_context(args.team, map_filter=map_filter, series_id=sid)
+        report  = generate_report(args.team, context, model=args.model, for_team=args.vs)
+        _print_brief(context, report, args.team, args.vs, series_meta, map_filter)
 
     if args.save:
+        import io as _io
+        buf = _io.StringIO()
+        import sys as _sys
+        old_out = _sys.stdout
+        _sys.stdout = buf
+        print_document(data, args.team, args.vs, series_meta, map_filter)
+        _sys.stdout = old_out
         slug = args.team.lower().replace(" ", "_")
         maps = "_".join(map_filter) if map_filter else "all"
         out  = Path(__file__).parent / f"antistrat_{slug}_{maps}.txt"
-        out.write_text(context + "\n\n" + report, encoding="utf-8")
-        print(f"\n  Report saved to: {out}")
-
-    if args.save:
-        slug = args.team.lower().replace(" ", "_")
-        out  = Path(__file__).parent / f"antistrat_{slug}.txt"
-        out.write_text(
-            f"CONTEXT\n{divider}\n{context}\n\n"
-            f"ANTI-STRAT BRIEF\n{divider}\n{report}",
-            encoding="utf-8"
-        )
-        print(f"\nReport saved to: {out}")
+        out.write_text(buf.getvalue(), encoding="utf-8")
+        print(f"\n  Saved: {out}")
 
 
 if __name__ == "__main__":
     main()
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 rib.gg pro Valorant scraper — Playwright edition.
 
 Data source: __NEXT_DATA__ embedded JSON in server-rendered HTML pages.
@@ -82,7 +82,11 @@ CREATE TABLE IF NOT EXISTS map_meta (
     y_origin     REAL,
     map_size     REAL,
     rotation     INTEGER,
-    sites_json   TEXT
+    sites_json   TEXT,
+    x_mult       REAL,
+    y_mult       REAL,
+    x_scalar     REAL,
+    y_scalar     REAL
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -179,6 +183,25 @@ CREATE INDEX IF NOT EXISTS idx_ps_match       ON player_stats(match_id);
 CREATE INDEX IF NOT EXISTS idx_ps_series      ON player_stats(series_id);
 CREATE INDEX IF NOT EXISTS idx_mp_player      ON match_players(player_id);
 CREATE INDEX IF NOT EXISTS idx_rounds_match   ON rounds(match_id);
+
+CREATE TABLE IF NOT EXISTS positions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id      INTEGER NOT NULL,
+    series_id     INTEGER NOT NULL,
+    round_number  INTEGER,
+    game_time_ms  INTEGER,
+    player_id     INTEGER,
+    player_ign    TEXT,
+    team_number   INTEGER,
+    x             REAL,
+    y             REAL,
+    alive         INTEGER,
+    has_spike     INTEGER DEFAULT 0,
+    ult_charges   INTEGER DEFAULT 0,
+    ult_max       INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pos_match_round ON positions(match_id, round_number);
+CREATE INDEX IF NOT EXISTS idx_pos_series      ON positions(series_id);
 """
 
 # ── DB ────────────────────────────────────────────────────────────────────────
@@ -200,6 +223,15 @@ def db_conn():
 def init_db():
     with db_conn() as conn:
         conn.executescript(SCHEMA)
+        # Migrate existing map_meta tables that predate the x_mult columns
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(map_meta)")}
+        for col in ("x_mult", "y_mult", "x_scalar", "y_scalar"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE map_meta ADD COLUMN {col} REAL")
+        pos_cols = {row[1] for row in conn.execute("PRAGMA table_info(positions)")}
+        for col, typedef in (("ult_charges", "INTEGER DEFAULT 0"), ("ult_max", "INTEGER DEFAULT 0")):
+            if col not in pos_cols:
+                conn.execute(f"ALTER TABLE positions ADD COLUMN {col} {typedef}")
     log.info("DB ready -> %s", DB_PATH)
 
 
@@ -293,9 +325,16 @@ def _parse_and_store(next_data: dict, series_id: int, save_dump: bool = False) -
         out.write_text(json.dumps(next_data, indent=2, ensure_ascii=False), encoding="utf-8")
         log.info("Dumped -> %s", out)
 
-    t1   = series.get("team1") or {}
-    t2   = series.get("team2") or {}
+    t1    = series.get("team1") or {}
+    t2    = series.get("team2") or {}
     stats = series.get("stats") or {}
+
+    # Skip series with no 2D replay data (no kill coordinates)
+    kills_raw   = stats.get("kills") or []
+    coord_count = sum(1 for k in kills_raw if k.get("victimLocationX") is not None)
+    if coord_count == 0:
+        log.warning("Series %d: no kill coordinates found — skipping (no 2D replay data)", series_id)
+        return False
 
     with db_conn() as conn:
         # Series
@@ -530,9 +569,10 @@ def _dist(a: tuple, b: tuple) -> float:
 
 
 def _infer_site(kills_in_round, rotation, sites, atk_team: int | None = None,
+                x_mult=None, y_mult=None, x_scalar=None, y_scalar=None,
+                x_origin=None, y_origin=None, map_size=None,
                 bound_min_x=None, bound_max_x=None,
-                bound_min_y=None, bound_max_y=None,
-                x_origin=None, y_origin=None, map_size=None):
+                bound_min_y=None, bound_max_y=None):
     """
     Improved site inference.
 
@@ -755,17 +795,672 @@ def _event_url(event_slug: str, event_id: int) -> str:
     return f"https://www.rib.gg/events/{event_slug}/{event_id}"
 
 
+# ── Team search ───────────────────────────────────────────────────────────────
+
+def search_team(team_name: str, headless: bool = False) -> tuple[int | None, str | None]:
+    """
+    Search rib.gg for a team by name. Returns (team_id, team_slug) or (None, None).
+    Dumps __NEXT_DATA__ to api_dumps/ if the expected structure isn't found.
+    """
+    import urllib.parse
+    url = f"https://www.rib.gg/search?q={urllib.parse.quote(team_name)}"
+    data = fetch_next_data(url, headless=headless)
+    if not data:
+        return None, None
+
+    try:
+        pp = data["props"]["pageProps"]
+    except (KeyError, TypeError):
+        return None, None
+
+    # rib.gg search puts teams under several possible keys
+    teams = (
+        pp.get("teams")
+        or (pp.get("results") or {}).get("teams")
+        or []
+    )
+
+    if not teams:
+        DUMP_DIR.mkdir(exist_ok=True)
+        out = DUMP_DIR / f"search_{team_name.lower().replace(' ', '_')}.json"
+        out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        log.warning("No teams found in search results. Dumped to %s", out)
+        log.warning("pageProps keys: %s", list(pp.keys()))
+        return None, None
+
+    name_lower = team_name.lower()
+    for t in teams:
+        if not isinstance(t, dict):
+            continue
+        t_name = (t.get("name") or t.get("shortName") or "").lower()
+        if name_lower in t_name or t_name in name_lower:
+            return t.get("id"), t.get("slug") or t_name.replace(" ", "-")
+
+    # Fall back to first result
+    first = teams[0]
+    if isinstance(first, dict):
+        log.warning("Exact match not found, using first result: %s", first.get("name"))
+        return first.get("id"), first.get("slug")
+
+    return None, None
+
+
+def get_team_recent_series(team_id: int, team_slug: str | None = None,
+                            limit: int = 7, headless: bool = False) -> list[int]:
+    """
+    Load a team's rib.gg matches page, intercept API responses, and return
+    the most recent series IDs.
+
+    rib.gg loads the series list via be-prod.rib.gg API calls (not __NEXT_DATA__),
+    so we use Playwright response interception to capture it.
+
+    Dumps captured data to api_dumps/ when the structure isn't recognised so
+    the right field names can be identified.
+    """
+    sync_playwright = _get_playwright()
+
+    if team_slug:
+        url = f"https://www.rib.gg/teams/{team_slug}/matches/{team_id}"
+    else:
+        url = f"https://www.rib.gg/teams/{team_id}"
+
+    api_calls: list[dict] = []
+    next_data: dict | None = None
+
+    with sync_playwright() as p:
+        browser = _make_browser(p, headless=headless)
+        ctx     = _make_context(browser)
+        page    = ctx.new_page()
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+
+        def on_response(resp):
+            rurl = resp.url
+            if ("be-prod.rib.gg" in rurl or "/api/" in rurl) and resp.status < 400:
+                try:
+                    body = resp.json()
+                    api_calls.append({"url": rurl, "data": body})
+                except Exception:
+                    pass
+
+        page.on("response", on_response)
+
+        try:
+            log.info("Loading: %s", url)
+            page.goto(url, wait_until="load", timeout=45_000)
+            page.wait_for_timeout(PAGE_LOAD_WAIT_MS)
+            raw = page.evaluate("""
+                () => {
+                    const el = document.getElementById('__NEXT_DATA__');
+                    return el ? el.textContent : null;
+                }
+            """)
+            next_data = json.loads(raw) if raw else None
+        except Exception as e:
+            log.error("Failed to load team page %d: %s", team_id, e)
+        finally:
+            browser.close()
+
+    # ── Try to extract series IDs ─────────────────────────────────────────────
+
+    # ID field names rib.gg may use for series objects
+    ID_KEYS = ("id", "seriesId", "series_id", "matchId", "match_id")
+
+    def extract_ids(items) -> list[int]:
+        ids = []
+        for item in (items or []):
+            if not isinstance(item, dict):
+                continue
+            for k in ID_KEYS:
+                if k in item:
+                    ids.append(item[k])
+                    break
+        return ids
+
+    # 1. Try __NEXT_DATA__ pageProps
+    pp = {}
+    try:
+        pp = (next_data or {}).get("props", {}).get("pageProps", {})
+    except Exception:
+        pass
+
+    for key in ("series", "matches", "recentMatches", "recentSeries", "seriesList"):
+        candidate = pp.get(key)
+        if candidate:
+            ids = extract_ids(candidate)
+            if ids:
+                log.info("Team %d: found %d series in pageProps[%s]", team_id, len(ids), key)
+                return ids[:limit]
+
+    # 2. Try intercepted API responses
+    for call in api_calls:
+        body = call.get("data") or {}
+        if isinstance(body, list):
+            ids = extract_ids(body)
+            if ids:
+                log.info("Team %d: found %d series in API response %s", team_id, len(ids), call["url"])
+                return ids[:limit]
+        if isinstance(body, dict):
+            for key in ("series", "matches", "recentMatches", "data", "results", "seriesList"):
+                candidate = body.get(key)
+                if candidate and isinstance(candidate, list):
+                    ids = extract_ids(candidate)
+                    if ids:
+                        log.info("Team %d: found %d series in API[%s][%s]",
+                                 team_id, len(ids), call["url"], key)
+                        return ids[:limit]
+
+    # ── Nothing found — dump everything for inspection ────────────────────────
+    DUMP_DIR.mkdir(exist_ok=True)
+    summary = {
+        "url":             url,
+        "pageProps_keys":  list(pp.keys()),
+        "api_calls": [
+            {"url":      c["url"],
+             "top_keys": list(c["data"].keys()) if isinstance(c.get("data"), dict)
+                         else f"[list len={len(c['data'])}]" if isinstance(c.get("data"), list)
+                         else str(type(c.get("data")))}
+            for c in api_calls
+        ],
+    }
+    out_s = DUMP_DIR / f"team_{team_id}_summary.json"
+    out_f = DUMP_DIR / f"team_{team_id}_full.json"
+    out_s.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    out_f.write_text(
+        json.dumps({"next_data": next_data, "api_calls": api_calls},
+                   indent=2, ensure_ascii=False),
+        encoding="utf-8"
+    )
+    log.warning(
+        "Could not find series list for team %d.\n"
+        "  pageProps keys : %s\n"
+        "  API calls      : %d\n"
+        "  Summary dumped : %s\n"
+        "  Full dump      : %s",
+        team_id, list(pp.keys()), len(api_calls), out_s, out_f
+    )
+    return []
+
+
+def get_team_id_from_db(team_name: str) -> int | None:
+    """Return the rib.gg team ID if we've already scraped any series for this team."""
+    with db_conn() as conn:
+        row = conn.execute("""
+            SELECT team1_id FROM series WHERE LOWER(team1_name) = LOWER(?)
+            UNION
+            SELECT team2_id FROM series WHERE LOWER(team2_name) = LOWER(?)
+            LIMIT 1
+        """, (team_name, team_name)).fetchone()
+    return row[0] if row else None
+
+
+# ── 2D replay fetching ────────────────────────────────────────────────────────
+
+def fetch_2d_map(series_id: int, map_num: int, headless: bool = False) -> dict:
+    """
+    Load the rib.gg 2D replay page for one map of a series.
+    Intercepts all be-prod.rib.gg API responses AND extracts __NEXT_DATA__.
+
+    URL format: https://www.rib.gg/2d/series/{series_id}/map/{map_num}
+
+    Returns:
+        {'next_data': {...} or None,
+         'api_calls': [{'url': ..., 'data': ...}, ...]}
+    """
+    sync_playwright = _get_playwright()
+    url = f"https://www.rib.gg/2d/series/{series_id}/map/{map_num}"
+    api_calls: list[dict] = []
+
+    with sync_playwright() as p:
+        browser = _make_browser(p, headless=headless)
+        ctx     = _make_context(browser)
+        page    = ctx.new_page()
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+
+        def on_response(resp):
+            rurl = resp.url
+            if ("be-prod.rib.gg" in rurl or "/api/" in rurl) and resp.status < 400:
+                try:
+                    body = resp.json()
+                    api_calls.append({"url": rurl, "data": body})
+                except Exception:
+                    pass
+
+        page.on("response", on_response)
+
+        try:
+            log.info("Loading 2D replay: %s", url)
+            page.goto(url, wait_until="load", timeout=45_000)
+            page.wait_for_timeout(PAGE_LOAD_WAIT_MS)
+            raw = page.evaluate("""
+                () => {
+                    const el = document.getElementById('__NEXT_DATA__');
+                    return el ? el.textContent : null;
+                }
+            """)
+            next_data = json.loads(raw) if raw else None
+        except Exception as e:
+            log.error("Failed to load 2D page series %d map %d: %s", series_id, map_num, e)
+            next_data = None
+        finally:
+            browser.close()
+
+    return {"next_data": next_data, "api_calls": api_calls}
+
+
+def _extract_positions(result: dict, series_id: int, map_num: int) -> list | None:
+    """
+    Extract player position snapshot data from a fetch_2d_map() result.
+
+    Tries __NEXT_DATA__ pageProps first, then intercepted API responses.
+    If the structure is unrecognised, dumps everything to api_dumps/ and returns None.
+    The dump lets you inspect the real key names and update this function.
+    """
+    next_data  = result.get("next_data") or {}
+    api_calls  = result.get("api_calls") or []
+
+    try:
+        pp = next_data.get("props", {}).get("pageProps", {})
+    except Exception:
+        pp = {}
+
+    # Common key names for round/position data across rib.gg versions
+    rounds_data = (
+        pp.get("rounds")
+        or pp.get("roundData")
+        or pp.get("replayData")
+        or pp.get("positions")
+        or pp.get("snapshots")
+        or pp.get("data")
+    )
+
+    if not rounds_data:
+        for call in api_calls:
+            body = call.get("data") or {}
+            if not isinstance(body, dict):
+                continue
+            rounds_data = (
+                body.get("rounds")
+                or body.get("roundData")
+                or body.get("replayData")
+                or body.get("positions")
+                or body.get("snapshots")
+            )
+            if rounds_data:
+                log.info("Position data found in API response: %s", call["url"])
+                break
+
+    if not rounds_data:
+        # Dump everything so the key names can be identified
+        DUMP_DIR.mkdir(exist_ok=True)
+        summary = {
+            "pageProps_keys": list(pp.keys()),
+            "api_calls": [
+                {"url": c["url"],
+                 "top_keys": list(c["data"].keys()) if isinstance(c.get("data"), dict) else str(type(c.get("data")))}
+                for c in api_calls
+            ],
+        }
+        out_summary = DUMP_DIR / f"2d_series_{series_id}_map_{map_num}_summary.json"
+        out_full    = DUMP_DIR / f"2d_series_{series_id}_map_{map_num}_full.json"
+        out_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        out_full.write_text(
+            json.dumps({"next_data": next_data, "api_calls": api_calls}, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        log.warning(
+            "2D structure unknown for series %d map %d — dumped to %s\n"
+            "  pageProps keys: %s\n"
+            "  API calls intercepted: %d",
+            series_id, map_num, out_summary,
+            list(pp.keys()), len(api_calls)
+        )
+        return None
+
+    return rounds_data if isinstance(rounds_data, list) else [rounds_data]
+
+
+def _store_positions(rounds_data: list, series_id: int, match_id: int):
+    """
+    Persist player position snapshots from 2D replay data.
+    Handles multiple possible shapes of the round/snapshot objects.
+    """
+    rows = []
+    for round_obj in rounds_data:
+        if not isinstance(round_obj, dict):
+            continue
+
+        round_num = (
+            round_obj.get("roundNumber")
+            or round_obj.get("number")
+            or round_obj.get("round")
+        )
+
+        # Each round contains an array of timed frames / snapshots
+        frames = (
+            round_obj.get("positions")
+            or round_obj.get("snapshots")
+            or round_obj.get("frames")
+            or round_obj.get("playerLocations")
+            or []
+        )
+
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            t = (
+                frame.get("gameTime")
+                or frame.get("time")
+                or frame.get("timestamp")
+                or frame.get("roundTimeMillis")
+                or 0
+            )
+            players = (
+                frame.get("players")
+                or frame.get("playerPositions")
+                or frame.get("locations")
+                or []
+            )
+            for pl in players:
+                if not isinstance(pl, dict):
+                    continue
+                rows.append((
+                    match_id, series_id, round_num, t,
+                    pl.get("playerId") or pl.get("id"),
+                    pl.get("ign") or pl.get("name"),
+                    pl.get("teamNumber") or pl.get("team"),
+                    pl.get("x") or pl.get("locationX") or pl.get("posX"),
+                    pl.get("y") or pl.get("locationY") or pl.get("posY"),
+                    int(bool(pl.get("alive", True))),
+                    int(bool(pl.get("hasSpike") or pl.get("spike", False))),
+                ))
+
+    if not rows:
+        log.warning("No position rows extracted for match %d — data shape may differ from expected", match_id)
+        return
+
+    with db_conn() as conn:
+        conn.execute("DELETE FROM positions WHERE match_id=?", (match_id,))
+        conn.executemany("""
+            INSERT INTO positions
+              (match_id, series_id, round_number, game_time_ms,
+               player_id, player_ign, team_number, x, y, alive, has_spike)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, rows)
+    log.info("Stored %d position snapshots for match %d", len(rows), match_id)
+
+
+def _parse_ribgg_2d(pp: dict, series_id: int, match_id: int,
+                    api_calls: list | None = None) -> int:
+    """
+    Parse rib.gg's matchRoundFrames format into position rows and store them.
+
+    __NEXT_DATA__ only contains round 1 frames.  All other rounds come from
+    intercepted API calls to:
+      be-prod.rib.gg/v1/2d-replay/series/{id}/map/{N}/round/{R}/frames
+    Pass api_calls from fetch_2d_map() to get complete per-round coverage.
+
+    has_spike column is repurposed to store ult_ready (1 = ult charged).
+    """
+    import re as _re
+
+    frames      = pp.get("matchRoundFrames", [])
+    rounds_meta = pp.get("matchRounds", {}).get("rounds", [])
+    config      = (pp.get("matchMetadata") or {}).get("configuration", {})
+    players_cfg = config.get("players", [])
+    teams_cfg   = config.get("teams", [])
+
+    if not frames or not rounds_meta:
+        return 0
+
+    # player_id → config dict
+    player_map: dict[int, dict] = {p["player_id"]: p for p in players_cfg}
+
+    # player_id → team_number (1 or 2, based on position in teams list)
+    team_map: dict[int, int] = {}
+    for tnum, team in enumerate(teams_cfg, start=1):
+        for pid in team.get("player_ids", []):
+            team_map[pid] = tnum
+
+    # Build sorted (round_number, start_ms) list for round assignment
+    round_times = sorted(
+        [(r["round_number"], r["round_start_match_time_ms"])
+         for r in rounds_meta if "round_start_match_time_ms" in r],
+        key=lambda x: x[1],
+    )
+    round_start_lookup = {rnum: sms for rnum, sms in round_times}
+
+    def assign_round(frame_ms: float) -> tuple[int | None, int]:
+        for i, (rnum, start_ms) in enumerate(round_times):
+            next_ms = round_times[i + 1][1] if i + 1 < len(round_times) else float("inf")
+            if start_ms <= frame_ms < next_ms:
+                return rnum, int(frame_ms - start_ms)
+        return None, 0
+
+    # Merge SSR frames (round 1) with all intercepted per-round API frames
+    all_frame_sources: list[tuple[list, int | None]] = [(frames, None)]
+    if api_calls:
+        pat = _re.compile(r"/round/(\d+)/frames")
+        for call in api_calls:
+            m = pat.search(call.get("url", ""))
+            if m:
+                rnum = int(m.group(1))
+                call_frames = call.get("data", {}).get("frames", [])
+                if call_frames:
+                    all_frame_sources.append((call_frames, rnum))
+
+    rows = []
+    for frame_list, forced_round in all_frame_sources:
+        for frame in frame_list:
+            if frame.get("phase") != "IN_ROUND":
+                continue
+
+            time_str = frame.get("omittingPauses", "0s")
+            try:
+                frame_ms = float(str(time_str).rstrip("s")) * 1000
+            except (ValueError, AttributeError):
+                continue
+
+            if forced_round is not None:
+                round_num     = forced_round
+                start_ms      = round_start_lookup.get(forced_round, frame_ms)
+                round_time_ms = max(0, int(frame_ms - start_ms))
+            else:
+                round_num, round_time_ms = assign_round(frame_ms)
+
+            if round_num is None:
+                continue
+
+            for ps in frame.get("playerStatus", []):
+                pid   = ps.get("playerId")
+                p_cfg = player_map.get(pid, {})
+                tnum  = team_map.get(pid)
+
+                abilities = ps.get("abilities", [])
+                ult_charges = 0
+                ult_max     = 0
+                for ab in abilities:
+                    slot = ab.get("inventorySlot", "")
+                    if slot == "ULTIMATE" or slot == "ABILITY_5":
+                        ult_charges = int(ab.get("totalCharges") or 0)
+                        ult_max     = int(ab.get("maxCharges")   or 0)
+                        break
+                if not ult_charges and abilities:
+                    last = abilities[-1]
+                    ult_charges = int(last.get("totalCharges") or 0)
+                    ult_max     = int(last.get("maxCharges")   or 0)
+
+                rows.append((
+                    match_id, series_id, round_num, round_time_ms,
+                    p_cfg.get("rib_id") or pid,
+                    p_cfg.get("display_name"),
+                    tnum,
+                    ps.get("locationX"),
+                    ps.get("locationY"),
+                    int(bool(ps.get("isAlive", True))),
+                    int(ult_charges > 0),  # has_spike = ult_ready (binary, kept for compat)
+                    ult_charges,
+                    ult_max,
+                ))
+
+    if not rows:
+        log.warning("matchRoundFrames found but no IN_ROUND frames extracted for match %d", match_id)
+        return 0
+
+    with db_conn() as conn:
+        conn.execute("DELETE FROM positions WHERE match_id=?", (match_id,))
+        conn.executemany("""
+            INSERT INTO positions
+              (match_id, series_id, round_number, game_time_ms,
+               player_id, player_ign, team_number, x, y, alive, has_spike,
+               ult_charges, ult_max)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, rows)
+
+    log.info("Stored %d position frames for match %d across %d rounds",
+             len(rows), match_id, len(round_times))
+    return len(rows)
+
+
+def scrape_2d_series(series_id: int, headless: bool = False, force: bool = False):
+    """
+    Fetch 2D replay data for all maps of a series.
+    match_ids are read from the DB (populated by the main scrape).
+    force=True re-fetches even if positions already exist (use after fixing bugs).
+    """
+    with db_conn() as conn:
+        match_ids = [
+            r[0] for r in conn.execute(
+                "SELECT match_id FROM matches WHERE series_id=? ORDER BY match_number",
+                (series_id,)
+            ).fetchall()
+        ]
+
+    if not match_ids:
+        log.warning("No matches found in DB for series %d — run main scrape first", series_id)
+        return
+
+    for map_num, match_id in enumerate(match_ids, start=1):
+        with db_conn() as conn:
+            kill_count = conn.execute(
+                "SELECT COUNT(*) FROM kills WHERE match_id=?", (match_id,)
+            ).fetchone()[0]
+            existing = conn.execute(
+                "SELECT COUNT(*) FROM positions WHERE match_id=?", (match_id,)
+            ).fetchone()[0]
+
+        if kill_count == 0:
+            log.info("Match %d has no kills (unplayed map) — skipping 2D fetch", match_id)
+            continue
+        if existing > 0 and not force:
+            log.info("2D data already stored for match %d — skipping (use --force-2d to re-fetch)",
+                     match_id)
+            continue
+
+        log.info("Fetching 2D replay: series %d  map %d  (match_id=%d)",
+                 series_id, map_num, match_id)
+        result = fetch_2d_map(series_id, map_num, headless=headless)
+
+        # Always save the full dump so we can re-parse without re-fetching
+        dump_path = DUMP_DIR / f"2d_series_{series_id}_map_{map_num}_full.json"
+        dump_path.write_text(
+            json.dumps({"next_data": result.get("next_data"), "api_calls": result.get("api_calls", [])},
+                       indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        log.info("Saved 2D dump: %s", dump_path)
+
+        # rib.gg specific format: matchRoundFrames in __NEXT_DATA__
+        pp = (result.get("next_data") or {}).get("props", {}).get("pageProps", {})
+        api_calls = result.get("api_calls", [])
+        if pp.get("matchRoundFrames"):
+            stored = _parse_ribgg_2d(pp, series_id, match_id, api_calls=api_calls)
+            if stored == 0:
+                log.warning("matchRoundFrames present but 0 rows stored for map %d", map_num)
+            else:
+                log.info("Stored %d frames for map %d (match %d)", stored, map_num, match_id)
+        else:
+            rounds_data = _extract_positions(result, series_id, map_num)
+            if rounds_data:
+                _store_positions(rounds_data, series_id, match_id)
+            else:
+                log.warning("No 2D position data found for map %d", map_num)
+
+        time.sleep(BETWEEN_PAGES_S)
+
+
+def reparse_2d_from_dumps(series_id: int):
+    """
+    Re-parse 2D position data from already-saved dump files.
+    Uses the intercepted API calls to get all rounds (not just round 1).
+    Faster than re-scraping — no browser needed.
+    """
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT match_id, match_number FROM matches WHERE series_id=? ORDER BY match_number",
+            (series_id,)
+        ).fetchall()
+
+    if not rows:
+        log.warning("No matches found in DB for series %d", series_id)
+        return
+
+    for match_row in rows:
+        match_id  = match_row[0]
+        map_num   = match_row[1]
+        dump_path = DUMP_DIR / f"2d_series_{series_id}_map_{map_num}_full.json"
+
+        if not dump_path.exists():
+            log.warning("No dump file for series %d map %d — run scraper first", series_id, map_num)
+            continue
+
+        with open(dump_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        pp        = (data.get("next_data") or {}).get("props", {}).get("pageProps", {})
+        api_calls = data.get("api_calls", [])
+
+        if not pp.get("matchRoundFrames"):
+            log.info("No matchRoundFrames in dump for map %d — skipping", map_num)
+            continue
+
+        with db_conn() as conn:
+            kill_count = conn.execute(
+                "SELECT COUNT(*) FROM kills WHERE match_id=?", (match_id,)
+            ).fetchone()[0]
+
+        if kill_count == 0:
+            log.info("Match %d has no kills (unplayed) — skipping", match_id)
+            continue
+
+        log.info("Re-parsing 2D data for series %d map %d (match %d) from dump...",
+                 series_id, map_num, match_id)
+        stored = _parse_ribgg_2d(pp, series_id, match_id, api_calls=api_calls)
+        log.info("Stored %d frames for match %d", stored, match_id)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def scrape_series(series_id: int, headless: bool = False, save_dump: bool = False) -> bool:
-    """Load the series page, extract __NEXT_DATA__, store all tables. Returns success."""
+    """
+    Scrape a series: main match data first, then 2D replay positions for each map.
+    Returns True if the main scrape succeeded (2D failures are non-fatal).
+    """
     url  = _series_url(series_id)
     data = fetch_next_data(url, headless=headless)
     if not data:
         return False
     ok = _parse_and_store(data, series_id, save_dump=save_dump)
+    if not ok:
+        return False
     time.sleep(BETWEEN_PAGES_S)
-    return ok
+
+    # Fetch 2D replay positions for each map
+    scrape_2d_series(series_id, headless=headless)
+    return True
 
 
 def get_series_ids_from_event(event_slug: str, event_id: int,
@@ -993,6 +1688,12 @@ def _parse_cli():
         result["event_id"]   = int(argv[2])
     elif cmd == "--recompute-states":
         result["cmd"] = "recompute"
+    elif cmd == "--reparse-2d" and len(argv) >= 2:
+        result["cmd"] = "reparse2d"
+        result["series_id"] = int(argv[1])
+    elif cmd == "--force-2d" and len(argv) >= 2:
+        result["cmd"] = "force2d"
+        result["series_id"] = int(argv[1])
     else:
         return None
     return result
@@ -1023,3 +1724,9 @@ if __name__ == "__main__":
         print_summary()
     elif args["cmd"] == "recompute":
         recompute_all_round_states()
+    elif args["cmd"] == "reparse2d":
+        reparse_2d_from_dumps(args["series_id"])
+        print_summary()
+    elif args["cmd"] == "force2d":
+        scrape_2d_series(args["series_id"], headless=args["headless"], force=True)
+        print_summary()

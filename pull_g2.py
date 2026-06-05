@@ -1,4 +1,4 @@
-"""
+﻿"""
 pull_g2.py — Pull all G2 Esports VCT 2026 matches and report Pearl stats.
 
 Uses the already-cached api_dumps/g2_team_page.json (captured on first run)

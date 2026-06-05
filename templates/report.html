@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ report.team }} · {{ report.map }} · Report</title>
+  <title>{{ report.team }} · {{ report.map }} · Tendencies</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -11,181 +11,358 @@
       font-family: 'Segoe UI', system-ui, sans-serif;
       background: #0d0f1a;
       color: #c9d1e0;
-      max-width: 820px;
+      max-width: 860px;
       margin: 0 auto;
-      padding: 36px 24px 80px;
-      font-size: 15px;
+      padding: 32px 20px 80px;
+      font-size: 14px;
       line-height: 1.5;
     }
 
-    /* Header */
-    .header { margin-bottom: 28px; }
-    h1 { font-size: 1.7rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
-    h1 span { color: #60a5fa; }
-    .meta { color: #6b7280; font-size: 0.85em; margin-top: 6px; }
+    /* ── Header ── */
+    h1 {
+      font-size: 1.55rem; font-weight: 700; color: #fff;
+      letter-spacing: -0.02em; margin-bottom: 4px;
+    }
+    h1 span { color: #ff4655; }
+    .meta { color: #4b5563; font-size: 0.82em; margin-bottom: 28px; }
 
-    /* Baseline card */
+    /* ── Baseline card ── */
     .baseline {
       background: #161929;
-      border: 1px solid #252a40;
-      border-left: 4px solid #3b82f6;
-      border-radius: 0 8px 8px 0;
-      padding: 14px 18px;
-      margin-bottom: 36px;
+      border: 1px solid #1e2436;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 32px;
       display: flex;
-      gap: 32px;
-      align-items: center;
+      gap: 28px;
+      align-items: flex-start;
       flex-wrap: wrap;
     }
-    .baseline-label { color: #9ca3af; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
-    .baseline-stat { font-size: 1.4em; font-weight: 700; }
-    .bl-a { color: #4ade80; }
-    .bl-b { color: #f87171; }
-    .baseline-rounds { color: #6b7280; font-size: 0.85em; margin-top: 2px; }
+    .bl-stat   { min-width: 88px; }
+    .bl-label  { color: #4b5563; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3px; }
+    .bl-val    { font-size: 1.55em; font-weight: 700; line-height: 1.1; }
+    .bl-val.a  { color: #4ade80; }
+    .bl-val.b  { color: #f87171; }
+    .bl-sub    { color: #374151; font-size: 0.78em; margin-top: 3px; }
+    .bl-divider { width: 1px; background: #1e2436; align-self: stretch; }
+    .bl-note   { color: #4b5563; font-size: 0.8em; max-width: 340px; padding-left: 4px; align-self: center; }
 
-    /* Sections */
-    .section-title {
-      font-size: 0.72em;
+    /* ── Section header ── */
+    .section-hd {
+      font-size: 0.68em;
       font-weight: 700;
-      letter-spacing: 0.15em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      margin-bottom: 10px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #252a40;
+      color: #3a4a5a;
+      border-top: 1px solid #1e2436;
+      padding-top: 14px;
+      margin: 28px 0 14px;
     }
-    .strong-title  { color: #4ade80; }
-    .moderate-title { color: #fbbf24; }
-    .weak-title    { color: #6b7280; }
 
-    .section { margin-bottom: 32px; }
-
-    /* Tendency rows */
+    /* ── STRONGEST TENDENCIES ── */
     .tendency {
+      border-bottom: 1px solid #0f121a;
+      padding: 14px 0 12px;
       display: grid;
-      grid-template-columns: 1fr 140px 80px 80px;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid #1a1e2e;
+      grid-template-columns: 32px 1fr;
+      gap: 0 12px;
     }
     .tendency:last-child { border-bottom: none; }
 
-    .t-label { color: #d1d5db; }
-
-    .t-result { font-weight: 700; font-size: 1.05em; white-space: nowrap; }
-    .t-result.A { color: #4ade80; }
-    .t-result.B { color: #f87171; }
-
-    .t-rounds { color: #6b7280; font-size: 0.85em; text-align: right; white-space: nowrap; }
-    .small-sample { color: #b45309; }
-
-    .t-diff {
-      font-size: 0.82em;
-      font-weight: 600;
+    .t-rank {
+      font-size: 0.7em;
+      font-weight: 700;
+      color: #2a3a4a;
+      padding-top: 3px;
       text-align: right;
-      white-space: nowrap;
     }
-    .t-diff.pos { color: #6ee7b7; }
-    .t-diff.neg { color: #fca5a5; }
-    .t-diff.neu { color: #6b7280; }
+    .conf-high .t-rank { color: #3b82f6; }
+    .conf-med  .t-rank { color: #2a4060; }
 
-    /* Bar */
-    .bar-wrap { grid-column: span 4; padding-top: 2px; }
-    .bar-bg { height: 3px; background: #1e2436; border-radius: 2px; }
-    .bar-fill { height: 100%; border-radius: 2px; }
-    .bar-strong  .bar-fill { background: #4ade80; }
-    .bar-moderate .bar-fill { background: #fbbf24; }
-    .bar-weak    .bar-fill { background: #4b5563; }
+    .t-body {}
 
-    /* For smaller screens, single column */
-    @media (max-width: 580px) {
-      .tendency { grid-template-columns: 1fr 1fr; }
-      .t-rounds { display: none; }
-      .bar-wrap { grid-column: span 2; }
+    .t-label {
+      font-size: 0.92em;
+      font-weight: 600;
+      color: #d1d5db;
+      margin-bottom: 4px;
+    }
+    .t-label .given { color: #5a6a7a; font-weight: 400; }
+
+    .t-outcome {
+      font-size: 1.05em;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .t-outcome.A { color: #4ade80; }
+    .t-outcome.B { color: #f87171; }
+    .t-outcome-arrow { color: #2a3a4a; margin-right: 5px; }
+
+    .t-meta {
+      font-size: 0.78em;
+      color: #4b5563;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 5px;
+    }
+    .t-meta .conf-label-high { color: #3b82f6; }
+    .t-meta .conf-label-med  { color: #7a9abf; }
+    .t-meta .conf-label-low  { color: #4b5563; }
+
+    .t-plant {
+      font-size: 0.78em;
+      color: #4b5563;
+      margin-bottom: 5px;
+    }
+    .t-plant .pos { color: #22c55e; font-weight: 600; }
+    .t-plant .neg { color: #ef4444; font-weight: 600; }
+
+    .t-bar-bg   { height: 2px; background: #0f121a; border-radius: 2px; overflow: hidden; margin-top: 6px; }
+    .t-bar-fill { height: 100%; border-radius: 2px; }
+    .t-bar-fill.A { background: #22c55e; }
+    .t-bar-fill.B { background: #ef4444; }
+
+    /* ── RECURRING PATTERNS ── */
+    .pattern-list { list-style: none; padding: 0; margin: 0; }
+    .pattern-list li {
+      position: relative;
+      padding: 9px 0 9px 22px;
+      border-bottom: 1px solid #0f121a;
+      font-size: 0.9em;
+      color: #9aa5b4;
+      line-height: 1.6;
+    }
+    .pattern-list li:last-child { border-bottom: none; }
+    .pattern-list li::before {
+      content: '•';
+      position: absolute;
+      left: 4px;
+      color: #2a3a4a;
+      font-size: 1.1em;
     }
 
-    /* Footer */
-    .footer { margin-top: 48px; color: #4b5563; font-size: 0.85em; }
-    .footer a { color: #60a5fa; text-decoration: none; }
+    /* ── SUPPORTING EVIDENCE ── */
+    .evidence-block {
+      margin-bottom: 20px;
+    }
+    .evidence-label {
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #4b5563;
+      margin-bottom: 8px;
+    }
+    .evidence-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82em;
+      font-variant-numeric: tabular-nums;
+    }
+    .evidence-table th {
+      text-align: left;
+      padding: 5px 10px;
+      color: #2a3a4a;
+      font-weight: 600;
+      font-size: 0.9em;
+      border-bottom: 1px solid #1e2436;
+    }
+    .evidence-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid #0f121a;
+      color: #9aa5b4;
+    }
+    .evidence-table tr:last-child td { border-bottom: none; }
+    .evidence-table .cond { color: #d1d5db; }
+    .evidence-table .pct-a { color: #4ade80; font-weight: 700; }
+    .evidence-table .pct-b { color: #f87171; font-weight: 700; }
+    .evidence-table .warn  { color: #b45309; font-size: 0.85em; }
+
+    .evidence-baseline {
+      font-size: 0.8em;
+      color: #374151;
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      background: #0f121a;
+      border-radius: 4px;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      color: #374151;
+      font-style: italic;
+      padding: 32px 0;
+      text-align: center;
+      line-height: 2.2;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid #12151f;
+      color: #2a3a4a;
+      font-size: 0.8em;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+    .footer a { color: #3b82f6; text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
 
-    .empty { color: #4b5563; font-style: italic; font-size: 0.9em; padding: 10px 0; }
+    @media (max-width: 540px) {
+      .tendency { grid-template-columns: 24px 1fr; }
+    }
   </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>{{ report.team }} — <span>{{ report.map }}</span></h1>
-  <div class="meta">
-    {{ report.total }} attacking rounds &nbsp;·&nbsp;
-    {{ report.n_matches }} map{{ 's' if report.n_matches != 1 else '' }} &nbsp;·&nbsp;
-    vs {{ report.opponents | join(', ') }}
-  </div>
+<h1>{{ report.team }} — <span>{{ report.map }}</span></h1>
+<div class="meta">
+  {{ report.total }} ATK rounds with inferred site
+  &nbsp;·&nbsp; {{ report.n_matches }} map{{ 's' if report.n_matches != 1 else '' }}
+  {% if report.opponents %}&nbsp;·&nbsp; vs {{ report.opponents | join(', ') }}{% endif %}
 </div>
 
 <div class="baseline">
-  <div>
-    <div class="baseline-label">Baseline — A site</div>
-    <div class="baseline-stat bl-a">{{ report.baseline_a }}%</div>
-    <div class="baseline-rounds">{{ report.n_a }} rounds</div>
+  <div class="bl-stat">
+    <div class="bl-label">Baseline — A site</div>
+    <div class="bl-val a">{{ report.baseline_a }}%</div>
+    <div class="bl-sub">{{ report.n_a }} rounds</div>
   </div>
-  <div>
-    <div class="baseline-label">Baseline — B site</div>
-    <div class="baseline-stat bl-b">{{ report.baseline_b }}%</div>
-    <div class="baseline-rounds">{{ report.n_b }} rounds</div>
+  <div class="bl-divider"></div>
+  <div class="bl-stat">
+    <div class="bl-label">Baseline — B site</div>
+    <div class="bl-val b">{{ report.baseline_b }}%</div>
+    <div class="bl-sub">{{ report.n_b }} rounds</div>
   </div>
-  <div style="color:#6b7280; font-size:0.83em; max-width:340px;">
-    These are the baselines every tendency below is measured against.
-    A condition is interesting when it moves these numbers by more than noise.
+  <div class="bl-divider"></div>
+  <div class="bl-stat">
+    <div class="bl-label">Plant rate</div>
+    <div class="bl-val" style="color:#c9d1e0">{{ report.baseline_plant_rate }}%</div>
+    <div class="bl-sub">{{ report.plant_total }} plants</div>
+  </div>
+  <div class="bl-note">
+    Only conditions that meaningfully shift these numbers are shown —
+    min 5 rounds, ≥10 pp swing, z ≥ 1.2. Ranked by z-score.
   </div>
 </div>
 
-{% macro render_section(tendencies, cls) %}
-  {% for t in tendencies %}
-  <div class="tendency">
-    <span class="t-label">{{ t.label }}</span>
-    <span class="t-result {{ t.site }}">→ {{ t.site }} site &nbsp;{{ t.pct }}%</span>
-    <span class="t-rounds {% if t.small %}small-sample{% endif %}">{{ t.n }} rounds{% if t.small %} ⚠{% endif %}</span>
-    <span class="t-diff {% if t.diff > 0 %}pos{% elif t.diff < 0 %}neg{% else %}neu{% endif %}">
-      {{ '+' if t.diff > 0 else '' }}{{ t.diff }}% vs base
-    </span>
-    <div class="bar-wrap">
-      <div class="bar-bg bar-{{ cls }}">
-        <div class="bar-fill" style="width:{{ t.bar }}%"></div>
+
+{# ── SECTION 1: STRONGEST TENDENCIES ── #}
+<div class="section-hd">Strongest Tendencies</div>
+
+{% if report.insights %}
+  {% for ins in report.insights %}
+    {% if ins.confidence == "High" %}{% set conf_cls = "conf-high" %}
+    {% elif ins.confidence == "Medium" %}{% set conf_cls = "conf-med" %}
+    {% else %}{% set conf_cls = "conf-low" %}{% endif %}
+    <div class="tendency {{ conf_cls }}">
+      <div class="t-rank">{{ ins.rank }}</div>
+      <div class="t-body">
+        <div class="t-label">
+          <span class="given">Given </span>{{ ins.label[0]|upper }}{{ ins.label[1:] }}
+        </div>
+        <div class="t-outcome {{ ins.site }}">
+          <span class="t-outcome-arrow">→</span>{{ ins.site }} Finish &nbsp;{{ ins.conditional_pct }}%
+        </div>
+        <div class="t-meta">
+          <span>Baseline {{ ins.baseline_pct }}%</span>
+          <span>n = {{ ins.n }} rounds{% if ins.small_sample %} <span class="warn">⚠ small sample</span>{% endif %}</span>
+          <span>
+            Confidence:&nbsp;
+            {% if ins.confidence == "High" %}<span class="conf-label-high">High</span>
+            {% elif ins.confidence == "Medium" %}<span class="conf-label-med">Medium</span>
+            {% else %}<span class="conf-label-low">Low</span>{% endif %}
+          </span>
+        </div>
+        {% set plant_delta = ins.plant_rate - ins.baseline_plant_rate %}
+        {% if plant_delta > 10 or plant_delta < -10 %}
+        <div class="t-plant">
+          Spike planted: <span class="{{ 'pos' if plant_delta > 0 else 'neg' }}">{{ ins.plant_rate }}%</span>
+          <span style="color:#374151"> (baseline {{ ins.baseline_plant_rate }}%)</span>
+        </div>
+        {% endif %}
+        <div class="t-bar-bg">
+          <div class="t-bar-fill {{ ins.site }}" style="width:{{ ins.bar }}%"></div>
+        </div>
       </div>
     </div>
-  </div>
   {% endfor %}
-{% endmacro %}
+{% else %}
+  <p class="empty">
+    No significant conditional tendencies found.<br>
+    More map data may surface patterns, or this team shows consistent<br>
+    behavior regardless of context.
+  </p>
+{% endif %}
 
-{% if report.strong %}
-<div class="section">
-  <div class="section-title strong-title">Strong Tendencies</div>
-  {{ render_section(report.strong, 'strong') }}
+
+{# ── SECTION 2: RECURRING PATTERNS ── #}
+{% if report.patterns %}
+<div class="section-hd">Recurring Patterns</div>
+<ul class="pattern-list">
+  {% for p in report.patterns %}
+  <li>{{ p }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+
+{# ── SECTION 3: SUPPORTING EVIDENCE ── #}
+{% if report.breakdowns %}
+<div class="section-hd">Supporting Evidence</div>
+
+<div class="evidence-baseline">
+  Baseline: A {{ report.baseline_a }}% ({{ report.n_a }}/{{ report.total }} rounds)
+  &nbsp;|&nbsp; B {{ report.baseline_b }}% ({{ report.n_b }}/{{ report.total }} rounds)
+  &nbsp;|&nbsp; Plant rate {{ report.baseline_plant_rate }}%
 </div>
-{% endif %}
 
-{% if report.moderate %}
-<div class="section">
-  <div class="section-title moderate-title">Moderate Tendencies</div>
-  {{ render_section(report.moderate, 'moderate') }}
+{% for cat, bd in report.breakdowns.items() %}
+<div class="evidence-block">
+  <div class="evidence-label">{{ bd.label }}</div>
+  <table class="evidence-table">
+    <thead>
+      <tr>
+        <th>Condition</th>
+        <th>n</th>
+        <th>A</th>
+        <th>B</th>
+        <th>→</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cond, row in bd.data.items() %}
+      <tr>
+        <td class="cond">{{ cond }}</td>
+        <td>{{ row.n }}{% if row.n < 8 %} <span class="warn">⚠</span>{% endif %}</td>
+        <td>{{ row.a }}</td>
+        <td>{{ row.b }}</td>
+        <td>
+          {% if row.n > 0 %}
+            {% set pct_a = (row.a / row.n * 100) | round | int %}
+            {% set pct_b = (row.b / row.n * 100) | round | int %}
+            {% if pct_a >= pct_b %}
+              <span class="pct-a">{{ pct_a }}% A</span>
+            {% else %}
+              <span class="pct-b">{{ pct_b }}% B</span>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
+{% endfor %}
 {% endif %}
 
-{% if report.weak %}
-<div class="section">
-  <div class="section-title weak-title">Weak / No Real Pattern</div>
-  {{ render_section(report.weak, 'weak') }}
-</div>
-{% endif %}
-
-{% if not report.strong and not report.moderate and not report.weak %}
-<p class="empty">Not enough data yet to surface meaningful patterns.</p>
-{% endif %}
 
 <div class="footer">
-  <a href="/">← Teams</a> &nbsp;·&nbsp;
-  <a href="/replay/g2/pearl">Replay viewer</a>
+  <a href="/">← All Teams</a>
 </div>
 
 </body>

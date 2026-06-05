@@ -1,25 +1,16 @@
-"""
-Phase 2: Pull 10+ recent VCT matches across different teams.
+﻿"""
+Phase 2: Pull VCT match data — by event or by team.
 
-Strategy:
-  - Try loading event pages to auto-discover series IDs
-  - Fall back to hardcoded series IDs if the event page structure differs
-  - Skip series already in DB (idempotent)
+Usage:
+  python collect.py                         # scrape default TARGET_EVENTS
+  python collect.py --list-teams            # list teams in DB
+  python collect.py --team "NRG" --last 7  # scrape NRG's last 7 series
 
 Known event slugs/IDs (from rib.gg URLs):
   5228 champions-tour-2025-americas-kickoff
   5232 champions-tour-2025-pacific-kickoff
   5469 champions-tour-2025-pacific-stage-1
   5574 champions-tour-2025-masters-toronto
-
-Known series IDs (fallback if event page discovery fails):
-  83369  Paper Rex vs T1       (Pacific Kickoff)
-  83350  MIBR vs 100 Thieves   (Americas Kickoff)
-  89921  RRQ vs Paper Rex      (Pacific Stage 1)
-  ... add more from rib.gg URLs as you browse
-
-Run:  python collect.py
-      python collect.py --list-teams
 """
 
 import logging
@@ -181,8 +172,92 @@ def list_teams():
     conn.close()
 
 
+def collect_team(team_name: str, limit: int = 7,
+                  team_id: int | None = None, team_slug: str | None = None):
+    """
+    Scrape the most recent N series for a specific team.
+
+    team_id / team_slug can be supplied directly from the rib.gg URL:
+      https://www.rib.gg/teams/{slug}/matches/{id}
+    If omitted, the function tries the local DB then rib.gg search.
+    """
+    scraper.init_db()
+
+    print(f"\n{'─'*60}")
+    print(f"  Looking up team: {team_name}")
+    print(f"{'─'*60}")
+
+    # 1. Caller supplied ID directly
+    if team_id:
+        log.info("Using supplied team_id=%d slug=%s", team_id, team_slug)
+
+    # 2. Already in DB from a previous scrape
+    elif (team_id := scraper.get_team_id_from_db(team_name)):
+        log.info("Found team_id=%d for '%s' in local DB", team_id, team_name)
+
+    # 3. Search rib.gg
+    else:
+        log.info("Team not in DB — searching rib.gg for '%s'", team_name)
+        team_id, team_slug = scraper.search_team(team_name)
+        if not team_id:
+            print(f"\nERROR: Could not find '{team_name}' on rib.gg.")
+            print("Tip: find the team page on rib.gg and pass the ID and slug directly:")
+            print(f"  python collect.py --team \"{team_name}\" --team-id <ID> --team-slug <slug>")
+            print("  e.g. for https://www.rib.gg/teams/nrg-esports/matches/116")
+            print(f"  python collect.py --team \"{team_name}\" --team-id 116 --team-slug nrg-esports")
+            return
+        print(f"Found: {team_name} (id={team_id}, slug={team_slug})")
+
+    print(f"\n{'─'*60}")
+    print(f"  Fetching last {limit} series for {team_name} (id={team_id})")
+    print(f"{'─'*60}")
+
+    series_ids = scraper.get_team_recent_series(team_id, team_slug=team_slug, limit=limit)
+
+    if not series_ids:
+        print("\nERROR: Could not extract series list from the team page.")
+        print("Check api_dumps/ for the team page JSON to inspect the structure.")
+        return
+
+    print(f"Series IDs found: {series_ids}\n")
+
+    pulled, skipped = 0, 0
+    for sid in series_ids:
+        if scraper.is_scraped(sid):
+            log.info("Series %d already in DB — skipping", sid)
+            skipped += 1
+        else:
+            ok = scraper.scrape_series(sid)
+            if ok:
+                pulled += 1
+
+    print(f"\n{'='*60}")
+    print(f"  Done. Scraped: {pulled}  Skipped (cached): {skipped}")
+    print(f"{'='*60}")
+    _print_summary()
+
+
 if __name__ == "__main__":
     if "--list-teams" in sys.argv:
         list_teams()
+    elif "--team" in sys.argv:
+        idx = sys.argv.index("--team")
+        if idx + 1 >= len(sys.argv):
+            print("Usage: python collect.py --team \"NRG Esports\" --team-id 116 --team-slug nrg-esports --last 7")
+            sys.exit(1)
+        _team  = sys.argv[idx + 1]
+        _limit = 7
+        _tid   = None
+        _tslug = None
+        if "--last" in sys.argv:
+            i = sys.argv.index("--last")
+            _limit = int(sys.argv[i + 1])
+        if "--team-id" in sys.argv:
+            i = sys.argv.index("--team-id")
+            _tid = int(sys.argv[i + 1])
+        if "--team-slug" in sys.argv:
+            i = sys.argv.index("--team-slug")
+            _tslug = sys.argv[i + 1]
+        collect_team(_team, _limit, team_id=_tid, team_slug=_tslug)
     else:
         collect()

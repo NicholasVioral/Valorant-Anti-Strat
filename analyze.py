@@ -1,4 +1,4 @@
-"""
+﻿"""
 Phase 3: Analyze positional patterns for a team from kill coordinate data.
 
 Position signal: victim X/Y at each kill event.

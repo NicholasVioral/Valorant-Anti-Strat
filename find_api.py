@@ -1,4 +1,4 @@
-"""
+﻿"""
 Intercepts all network requests while loading a rib.gg series page.
 Runs a real Chromium browser so it passes Cloudflare automatically.
 
