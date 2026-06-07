@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anti-Strat: G2 Esports — Pearl</title>
+<style>
+:root {
+  --bg: #0d0f14;
+  --surface: #161a24;
+  --surface2: #1e2433;
+  --border: #2a3045;
+  --accent: #e8383d;
+  --accent2: #ff6b35;
+  --gold: #f0c040;
+  --green: #3ecf8e;
+  --blue: #4da6ff;
+  --muted: #6b7a99;
+  --text: #dce3f0;
+  --text2: #a8b4cc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 24px 16px 60px;
+}
+.report-wrap { max-width: 960px; margin: 0 auto; }
+
+/* Header */
+.report-header {
+  background: linear-gradient(135deg, #1a0a0b 0%, #0d1a2e 100%);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+}
+.report-header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fff;
+  text-transform: uppercase;
+}
+.report-header .sub {
+  color: var(--text2);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.report-header .meta-pills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.pill {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.pill strong { color: var(--text); }
+
+/* Sections */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.section-header {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-header h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.section-number {
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.section-body { padding: 16px 20px; }
+
+/* Tendency cards */
+.tendency-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.tendency-card:last-child { margin-bottom: 0; }
+.tendency-rank { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+.tendency-label { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.tendency-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tendency-outcome {
+  background: #1a2e1a;
+  border: 1px solid #2a5a2a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green);
+}
+.tendency-meta { color: var(--text2); font-size: 12px; }
+.conf-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.conf-high   { background: #2a1a00; color: var(--gold); border: 1px solid #5a3800; }
+.conf-medium { background: #1a1a2e; color: var(--blue); border: 1px solid #2a2a5a; }
+.conf-low    { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+/* Patterns */
+.pattern-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pattern-item:last-child { border-bottom: none; }
+.pattern-bullet {
+  color: var(--accent2);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pattern-text { color: var(--text2); font-size: 13px; }
+
+/* Evidence table */
+.evidence-baseline {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.evidence-baseline strong { color: var(--text); }
+.evidence-group { margin-bottom: 18px; }
+.evidence-group-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 13px;
+}
+tr:last-child td { border-bottom: none; }
+.n-small { color: var(--accent); font-size: 11px; }
+.site-a { color: var(--blue); font-weight: 700; }
+.site-b { color: var(--accent2); font-weight: 700; }
+.pct-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.pct-bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.pct-bar-fill { height: 100%; border-radius: 3px; }
+
+/* Ult / Questions sections */
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.status-found    { background: #1a2e1a; color: var(--green); border: 1px solid #2a5a2a; }
+.status-missing  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+.ult-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.ult-finding:last-child { margin-bottom: 0; }
+.ult-label { font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.ult-row { color: var(--text2); margin-bottom: 4px; }
+.ult-delta-pos { color: var(--green); }
+.ult-delta-neg { color: var(--accent); }
+
+/* Weapon findings */
+.wpn-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent2);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.wpn-label { font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.wpn-zones { color: var(--text2); margin-bottom: 4px; }
+.zone-tag {
+  display: inline-block;
+  background: #1a1a2e;
+  border: 1px solid #2a2a5a;
+  border-radius: 3px;
+  padding: 1px 7px;
+  margin: 2px 3px 2px 0;
+  font-size: 12px;
+  color: var(--blue);
+}
+
+/* Stack findings */
+.stack-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+}
+.stack-map { font-weight: 700; color: var(--text); margin-bottom: 10px; font-size: 13px; }
+.stack-bars { display: flex; flex-direction: column; gap: 8px; }
+.stack-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.stack-key { color: var(--text2); width: 100px; flex-shrink: 0; }
+.stack-val { color: var(--text); width: 60px; flex-shrink: 0; }
+.no-data { color: var(--muted); font-style: italic; font-size: 13px; padding: 8px 0; }
+</style>
+</head>
+<body>
+<div class="report-wrap">
+
+<div class="report-header">
+  <h1>Match Analysis — G2 Esports</h1>
+  
+  <div class="meta-pills">
+    <span class="pill">Map: <strong>Pearl</strong></span>
+    <span class="pill">ATK Rounds: <strong>35</strong></span>
+    <span class="pill">Baseline A: <strong>46%</strong></span>
+    <span class="pill">Baseline B: <strong>54%</strong></span>
+    <span class="pill">Plant Rate: <strong>23%</strong></span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">1</div><h2>Strongest Tendencies</h2></div>
+  <div class="section-body">
+<div class="tendency-card">
+  <div class="tendency-rank">#1  [First Contact]</div>
+  <div class="tendency-label">first contact on A-side</div>
+  <div class="tendency-stats">
+    <span class="tendency-outcome">→ A Finish &nbsp; 88%</span>
+    <span class="tendency-meta">Baseline 46% &nbsp;·&nbsp; +42pp &nbsp;·&nbsp; n=16 &nbsp;·&nbsp; z=3.4</span>
+    <span class="conf-badge conf-high">High</span>
+  </div>
+</div>
+<div class="tendency-card">
+  <div class="tendency-rank">#2  [First Contact]</div>
+  <div class="tendency-label">first contact on B-side</div>
+  <div class="tendency-stats">
+    <span class="tendency-outcome">→ B Finish &nbsp; 87%</span>
+    <span class="tendency-meta">Baseline 54% &nbsp;·&nbsp; +32pp &nbsp;·&nbsp; n=15 &nbsp;·&nbsp; z=2.5</span>
+    <span class="conf-badge conf-high">High</span>
+  </div>
+</div>
+<div class="tendency-card">
+  <div class="tendency-rank">#3  [Player Trigger]</div>
+  <div class="tendency-label">BABYBAY gets first blood</div>
+  <div class="tendency-stats">
+    <span class="tendency-outcome">→ A Finish &nbsp; 71%</span>
+    <span class="tendency-meta">Baseline 46% &nbsp;·&nbsp; +26pp &nbsp;·&nbsp; n=7 &nbsp;·&nbsp; z=1.4</span>
+    <span class="conf-badge conf-low">Low</span>
+  </div>
+</div></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">2</div><h2>Recurring Patterns</h2></div>
+  <div class="section-body"><div class="pattern-item"><span class="pattern-bullet">▸</span><span class="pattern-text">When first pressure lands on A-side, they almost never rotate — 88% A finish vs 46% baseline (16 rounds).</span></div><div class="pattern-item"><span class="pattern-bullet">▸</span><span class="pattern-text">B-side opening contact strongly predicts a B execute — 87% vs 54% baseline (15 rounds).</span></div><div class="pattern-item"><span class="pattern-bullet">▸</span><span class="pattern-text">BABYBAY drives A-side executes — 71% A finish when he gets first blood (7 rounds).</span></div></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">3</div><h2>Supporting Evidence</h2></div>
+  <div class="section-body">
+<div class="evidence-baseline">
+  Baseline: <strong>A 46%</strong> (16/35 rounds) &nbsp;|&nbsp;
+  <strong>B 54%</strong> (19/35 rounds) &nbsp;|&nbsp;
+  Plant rate <strong>23%</strong>
+</div>
+<div class="evidence-group">
+  <div class="evidence-group-label">First contact → site</div>
+  <table>
+    <thead><tr><th>Condition</th><th>n</th><th>A kills</th><th>A %</th><th>B kills</th><th>B %</th></tr></thead>
+    <tbody>
+<tr>
+  <td>A</td>
+  <td style="text-align:center">16</td>
+  <td><span class="site-a">14</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:88%;background:var(--blue);"></div></div><span style="font-size:12px;color:var(--text2)">88%</span></div></td>
+  <td><span class="site-b">2</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:12%;background:var(--accent2);"></div></div><span style="font-size:12px;color:var(--text2)">12%</span></div></td>
+</tr>
+<tr>
+  <td>B</td>
+  <td style="text-align:center">15</td>
+  <td><span class="site-a">2</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:13%;background:var(--blue);"></div></div><span style="font-size:12px;color:var(--text2)">13%</span></div></td>
+  <td><span class="site-b">13</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:87%;background:var(--accent2);"></div></div><span style="font-size:12px;color:var(--text2)">87%</span></div></td>
+</tr>
+<tr>
+  <td>Mid<span class="n-small"> ⚠ small</span></td>
+  <td style="text-align:center">4</td>
+  <td><span class="site-a">0</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:0%;background:var(--blue);"></div></div><span style="font-size:12px;color:var(--text2)">0%</span></div></td>
+  <td><span class="site-b">4</span></td>
+  <td><div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:100%;background:var(--accent2);"></div></div><span style="font-size:12px;color:var(--text2)">100%</span></div></td>
+</tr></tbody>
+  </table>
+</div></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">4</div><h2>Ult Patterns</h2></div>
+  <div class="section-body"><span class="status-badge status-missing">Insufficient Sample</span><p class="pattern-text" style="margin-top:8px">Ult-fired rounds below threshold of 3 per player. Counts: leaf: 2, jawgemo: 2, valyn: 1, trent: 1.</p><p class="tendency-meta" style="margin-top:10px">Ult rounds detected (below threshold of 3):</p><ul style="margin:6px 0 0 20px"><li style="color:var(--text2);font-size:13px">leaf: 2 round(s)</li><li style="color:var(--text2);font-size:13px">jawgemo: 2 round(s)</li><li style="color:var(--text2);font-size:13px">valyn: 1 round(s)</li><li style="color:var(--text2);font-size:13px">trent: 1 round(s)</li></ul></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">5</div><h2>One Orb Off Ult Patterns</h2></div>
+  <div class="section-body"><span class="status-badge status-missing">Insufficient Sample</span><p class="pattern-text" style="margin-top:8px">One-orb-off rounds found but below threshold of 3. Counts: trent: 1, valyn: 2.</p></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">6</div><h2>Defensive Judge Patterns</h2></div>
+  <div class="section-body"><span class="status-badge status-missing">Insufficient Sample</span><p class="pattern-text" style="margin-top:8px">1 kill(s) with Judge on defense, but no player/map combination reached the minimum of 2. 1 combination(s) below threshold.</p></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">7</div><h2>Defensive Operator Patterns</h2></div>
+  <div class="section-body"><span class="status-badge status-found">Found</span><div class="evidence-baseline" style="margin:10px 0">Total DEF kills with Operator: <strong>10</strong></div>
+<div class="wpn-finding">
+  <div class="wpn-label">jawgemo (agent 18) — Pearl (7 kills)</div>
+  <div class="wpn-zones">Zones: <span class="zone-tag">A 5×</span><span class="zone-tag">B 2×</span></div>
+  <div style="color:var(--text2);font-size:12px;margin-top:6px">Avg timing: <strong style="color:var(--text)">36.6s</strong> into round</div>
+</div>
+<div class="wpn-finding">
+  <div class="wpn-label">BABYBAY (agent 26) — Pearl (3 kills <span class="n-small">⚠ small sample</span>)</div>
+  <div class="wpn-zones">Zones: <span class="zone-tag">A 2×</span><span class="zone-tag">B 1×</span></div>
+  <div style="color:var(--text2);font-size:12px;margin-top:6px">Avg timing: <strong style="color:var(--text)">52.8s</strong> into round</div>
+</div></div>
+</div>
+
+<div class="section">
+  <div class="section-header"><div class="section-number">8</div><h2>Low-Money Defensive Stacks</h2></div>
+  <div class="section-body"><span class="status-badge status-found">Found</span>
+<div class="stack-finding">
+  <div class="stack-map">Pearl <span style="font-weight:400;color:var(--muted);font-size:12px">(n=4 eco/half rounds with position data)</span></div>
+  <div class="stack-bars">
+<div class="stack-row">
+  <span class="stack-key">A-heavy</span>
+  <span class="stack-val">1/4</span>
+  <div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:25%;background:var(--blue);"></div></div><span style="font-size:12px;color:var(--text2)">25%</span></div>
+</div>
+<div class="stack-row">
+  <span class="stack-key">B-heavy</span>
+  <span class="stack-val">1/4</span>
+  <div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:25%;background:var(--accent2);"></div></div><span style="font-size:12px;color:var(--text2)">25%</span></div>
+</div>
+<div class="stack-row">
+  <span class="stack-key">Mid-heavy</span>
+  <span class="stack-val">1/4</span>
+  <div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:25%;background:var(--gold);"></div></div><span style="font-size:12px;color:var(--text2)">25%</span></div>
+</div>
+<div class="stack-row">
+  <span class="stack-key">Default</span>
+  <span class="stack-val">1/4</span>
+  <div class="pct-bar-wrap"><div class="pct-bar-bg"><div class="pct-bar-fill" style="width:25%;background:var(--muted);"></div></div><span style="font-size:12px;color:var(--text2)">25%</span></div>
+</div></div>
+</div></div>
+</div>
+</div>
+</body>
+</html>

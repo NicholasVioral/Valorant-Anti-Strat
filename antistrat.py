@@ -1548,6 +1548,8 @@ def print_document(data: dict, team: str, vs: str,
         blank()
         for f in ult_res["findings"]:
             print(f"  {f['label']}  ({f['ult_n']} rounds with ult)")
+            if f.get("round_log"):
+                print(f"  Rounds fired: {', '.join(f['round_log'])}")
             print(f"  Ult available: A {f['a_pct']}%  B {f['b_pct']}%")
             print(f"  Baseline:      A {f['baseline_a']}%  B {f['baseline_b']}%"
                   f"  (Δ {'+' if f['delta_a'] >= 0 else ''}{f['delta_a']}pp"
@@ -1659,6 +1661,573 @@ def _print_brief(context: str, report: str, team: str, vs: str,
     blank(); rule()
 
 
+# ── HTML report ──────────────────────────────────────────────────────────────
+
+_HTML_CSS = """
+:root {
+  --bg: #0d0f14;
+  --surface: #161a24;
+  --surface2: #1e2433;
+  --border: #2a3045;
+  --accent: #e8383d;
+  --accent2: #ff6b35;
+  --gold: #f0c040;
+  --green: #3ecf8e;
+  --blue: #4da6ff;
+  --muted: #6b7a99;
+  --text: #dce3f0;
+  --text2: #a8b4cc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 24px 16px 60px;
+}
+.report-wrap { max-width: 960px; margin: 0 auto; }
+
+/* Header */
+.report-header {
+  background: linear-gradient(135deg, #1a0a0b 0%, #0d1a2e 100%);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+}
+.report-header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fff;
+  text-transform: uppercase;
+}
+.report-header .sub {
+  color: var(--text2);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.report-header .meta-pills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.pill {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.pill strong { color: var(--text); }
+
+/* Sections */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.section-header {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-header h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.section-number {
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.section-body { padding: 16px 20px; }
+
+/* Tendency cards */
+.tendency-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.tendency-card:last-child { margin-bottom: 0; }
+.tendency-rank { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+.tendency-label { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.tendency-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tendency-outcome {
+  background: #1a2e1a;
+  border: 1px solid #2a5a2a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green);
+}
+.tendency-meta { color: var(--text2); font-size: 12px; }
+.conf-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.conf-high   { background: #2a1a00; color: var(--gold); border: 1px solid #5a3800; }
+.conf-medium { background: #1a1a2e; color: var(--blue); border: 1px solid #2a2a5a; }
+.conf-low    { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+/* Patterns */
+.pattern-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pattern-item:last-child { border-bottom: none; }
+.pattern-bullet {
+  color: var(--accent2);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pattern-text { color: var(--text2); font-size: 13px; }
+
+/* Evidence table */
+.evidence-baseline {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.evidence-baseline strong { color: var(--text); }
+.evidence-group { margin-bottom: 18px; }
+.evidence-group-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 13px;
+}
+tr:last-child td { border-bottom: none; }
+.n-small { color: var(--accent); font-size: 11px; }
+.site-a { color: var(--blue); font-weight: 700; }
+.site-b { color: var(--accent2); font-weight: 700; }
+.pct-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.pct-bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.pct-bar-fill { height: 100%; border-radius: 3px; }
+
+/* Ult / Questions sections */
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.status-found    { background: #1a2e1a; color: var(--green); border: 1px solid #2a5a2a; }
+.status-missing  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+.ult-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.ult-finding:last-child { margin-bottom: 0; }
+.ult-label { font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.ult-row { color: var(--text2); margin-bottom: 4px; }
+.ult-delta-pos { color: var(--green); }
+.ult-delta-neg { color: var(--accent); }
+
+/* Weapon findings */
+.wpn-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent2);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.wpn-label { font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.wpn-zones { color: var(--text2); margin-bottom: 4px; }
+.zone-tag {
+  display: inline-block;
+  background: #1a1a2e;
+  border: 1px solid #2a2a5a;
+  border-radius: 3px;
+  padding: 1px 7px;
+  margin: 2px 3px 2px 0;
+  font-size: 12px;
+  color: var(--blue);
+}
+
+/* Stack findings */
+.stack-finding {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+}
+.stack-map { font-weight: 700; color: var(--text); margin-bottom: 10px; font-size: 13px; }
+.stack-bars { display: flex; flex-direction: column; gap: 8px; }
+.stack-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.stack-key { color: var(--text2); width: 100px; flex-shrink: 0; }
+.stack-val { color: var(--text); width: 60px; flex-shrink: 0; }
+.no-data { color: var(--muted); font-style: italic; font-size: 13px; padding: 8px 0; }
+"""
+
+def _h(text: str) -> str:
+    """HTML-escape text."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def _conf_class(conf: str) -> str:
+    if "High" in conf or "Very" in conf:
+        return "conf-high"
+    if "Medium" in conf:
+        return "conf-medium"
+    return "conf-low"
+
+
+def _pct_bar(pct: int, color: str) -> str:
+    return (f'<div class="pct-bar-wrap">'
+            f'<div class="pct-bar-bg"><div class="pct-bar-fill" '
+            f'style="width:{pct}%;background:{color};"></div></div>'
+            f'<span style="font-size:12px;color:var(--text2)">{pct}%</span>'
+            f'</div>')
+
+
+def _status_badge(status: str) -> str:
+    labels = {
+        "found":               "Found",
+        "no_results":          "No Results",
+        "insufficient_sample": "Insufficient Sample",
+        "data_missing":        "Data Missing",
+        "not_implemented":     "Not Implemented",
+    }
+    css = "status-found" if status == "found" else "status-missing"
+    return f'<span class="status-badge {css}">{labels.get(status, status)}</span>'
+
+
+def generate_html(data: dict, team: str, vs: str,
+                  series_meta: dict, map_filter=None) -> str:
+    """Render the full anti-strat report as a self-contained HTML string."""
+    insights_list = data.get("insights", [])
+    patterns      = data.get("patterns", [])
+    breakdowns    = data.get("breakdowns", {})
+    total         = data["total"]
+    n_a, n_b      = data["n_a"], data["n_b"]
+    ba, bb        = data["baseline_a"], data["baseline_b"]
+    plant_rate    = data["baseline_plant_rate"]
+    map_label     = ", ".join(map_filter) if map_filter else data.get("map", "All Maps")
+    _single_map   = map_filter[0] if map_filter and len(map_filter) == 1 else None
+
+    parts = []
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    sub_html = ""
+    if series_meta:
+        t1  = _h(series_meta.get("team1_name", ""))
+        t2  = _h(series_meta.get("team2_name", ""))
+        evt = _h(series_meta.get("event_name", ""))
+        dt  = _h((series_meta.get("start_date") or "")[:10])
+        sub_html = f'<div class="sub">{t1} vs {t2} &nbsp;·&nbsp; {_h(evt)} &nbsp;·&nbsp; {dt}</div>'
+
+    parts.append(f"""
+<div class="report-header">
+  <h1>Match Analysis — {_h(team)}</h1>
+  {sub_html}
+  <div class="meta-pills">
+    <span class="pill">Map: <strong>{_h(map_label)}</strong></span>
+    <span class="pill">ATK Rounds: <strong>{total}</strong></span>
+    <span class="pill">Baseline A: <strong>{ba}%</strong></span>
+    <span class="pill">Baseline B: <strong>{bb}%</strong></span>
+    <span class="pill">Plant Rate: <strong>{plant_rate}%</strong></span>
+  </div>
+</div>""")
+
+    # ── Section 1: Strongest Tendencies ──────────────────────────────────────
+    body = ""
+    if not insights_list:
+        body = '<p class="no-data">No significant tendencies found (requires n≥5 per condition, ≥10pp swing, z≥1.2).</p>'
+    else:
+        for ins in insights_list:
+            conf  = ins["confidence"]
+            delta = ins["delta"]
+            delta_str = f"{'+'if delta>0 else ''}{delta}pp"
+            body += f"""
+<div class="tendency-card">
+  <div class="tendency-rank">#{ins['rank']}  [{_h(ins['category'])}]</div>
+  <div class="tendency-label">{_h(ins['label'])}</div>
+  <div class="tendency-stats">
+    <span class="tendency-outcome">→ {_h(ins['site'])} Finish &nbsp; {ins['conditional_pct']}%</span>
+    <span class="tendency-meta">Baseline {ins['baseline_pct']}% &nbsp;·&nbsp; {delta_str} &nbsp;·&nbsp; n={ins['n']} &nbsp;·&nbsp; z={ins['z']}</span>
+    <span class="conf-badge {_conf_class(conf)}">{_h(conf)}</span>
+  </div>
+</div>"""
+
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">1</div><h2>Strongest Tendencies</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Section 2: Recurring Patterns ────────────────────────────────────────
+    body = ""
+    if not patterns:
+        body = '<p class="no-data">Insufficient data to derive patterns.</p>'
+    else:
+        for sent in patterns:
+            body += f'<div class="pattern-item"><span class="pattern-bullet">▸</span><span class="pattern-text">{_h(sent)}</span></div>'
+
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">2</div><h2>Recurring Patterns</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Section 3: Supporting Evidence ───────────────────────────────────────
+    body = f"""
+<div class="evidence-baseline">
+  Baseline: <strong>A {ba}%</strong> ({n_a}/{total} rounds) &nbsp;|&nbsp;
+  <strong>B {bb}%</strong> ({n_b}/{total} rounds) &nbsp;|&nbsp;
+  Plant rate <strong>{plant_rate}%</strong>
+</div>"""
+
+    for bd_name, bd in breakdowns.items():
+        label  = bd.get("label", bd_name)
+        values = bd.get("data", {})
+        if not values:
+            continue
+        rows_html = ""
+        for key, counts in values.items():
+            n_sub = counts["n"]
+            a_cnt = counts["a"]
+            b_cnt = counts["b"]
+            a_pct = round(a_cnt / n_sub * 100) if n_sub else 0
+            b_pct = 100 - a_pct
+            small = '<span class="n-small"> ⚠ small</span>' if n_sub < 5 else ""
+            rows_html += f"""
+<tr>
+  <td>{_h(str(key))}{small}</td>
+  <td style="text-align:center">{n_sub}</td>
+  <td><span class="site-a">{a_cnt}</span></td>
+  <td>{_pct_bar(a_pct, "var(--blue)")}</td>
+  <td><span class="site-b">{b_cnt}</span></td>
+  <td>{_pct_bar(b_pct, "var(--accent2)")}</td>
+</tr>"""
+
+        body += f"""
+<div class="evidence-group">
+  <div class="evidence-group-label">{_h(label)}</div>
+  <table>
+    <thead><tr><th>Condition</th><th>n</th><th>A kills</th><th>A %</th><th>B kills</th><th>B %</th></tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+</div>"""
+
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">3</div><h2>Supporting Evidence</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Section 4: Ult Patterns ───────────────────────────────────────────────
+    ult_res = _questions.ult_behavior(team, _single_map)
+    body = _status_badge(ult_res["status"])
+    if ult_res["status"] != "found":
+        body += f'<p class="pattern-text" style="margin-top:8px">{_h(ult_res["reason"])}</p>'
+        ult_counts = ult_res.get("ult_counts", {})
+        nonzero = {p: n for p, n in ult_counts.items() if n > 0}
+        if nonzero:
+            body += f'<p class="tendency-meta" style="margin-top:10px">Ult rounds detected (below threshold of {ult_res["threshold"]}):</p><ul style="margin:6px 0 0 20px">'
+            for p, n in sorted(nonzero.items(), key=lambda x: -x[1]):
+                body += f'<li style="color:var(--text2);font-size:13px">{_h(p)}: {n} round(s)</li>'
+            body += "</ul>"
+    else:
+        body += f'<div class="evidence-baseline" style="margin:10px 0">Baseline: <strong>A {ult_res["baseline_a"]}%</strong> &nbsp;|&nbsp; <strong>B {ult_res["baseline_b"]}%</strong> &nbsp;|&nbsp; ATK rounds: <strong>{ult_res["atk_rounds"]}</strong></div>'
+        for f in ult_res["findings"]:
+            delta_a = f["delta_a"]
+            dcls    = "ult-delta-pos" if delta_a >= 0 else "ult-delta-neg"
+            fake_html = ""
+            if f["fake_rate"] is not None and f["baseline_fake"] is not None:
+                fake_html = f'<div class="ult-row">Fake rate: <strong>{f["fake_rate"]}%</strong> (baseline {f["baseline_fake"]}%, n={f["fake_n"]})</div>'
+            rounds_html = ""
+            if f.get("round_log"):
+                rounds_html = (f'<div class="ult-row" style="color:var(--gold)">'
+                               f'Rounds fired: {_h(", ".join(f["round_log"]))}</div>')
+            body += f"""
+<div class="ult-finding">
+  <div class="ult-label">{_h(f['label'])} <span style="font-weight:400;color:var(--muted)">({f['ult_n']} rounds with ult)</span></div>
+  {rounds_html}
+  <div class="ult-row">Ult available: <span class="site-a">A {f['a_pct']}%</span> &nbsp; <span class="site-b">B {f['b_pct']}%</span></div>
+  <div class="ult-row">Baseline: A {f['baseline_a']}%  B {f['baseline_b']}%
+    &nbsp;·&nbsp; <span class="{dcls}">Δ {'+' if delta_a >= 0 else ''}{delta_a}pp toward {'A' if delta_a >= 0 else 'B'}</span>
+  </div>
+  {fake_html}
+</div>"""
+
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">4</div><h2>Ult Patterns</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Section 5: One Orb Off Ult ────────────────────────────────────────────
+    orb_res = _questions.one_orb_off_ult(team, _single_map)
+    body = _status_badge(orb_res["status"])
+    body += f'<p class="pattern-text" style="margin-top:8px">{_h(orb_res["reason"])}</p>'
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">5</div><h2>One Orb Off Ult Patterns</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Sections 6a/6b: Defensive Weapon Patterns ─────────────────────────────
+    for sec_num, wpn in enumerate(("Judge", "Operator"), start=6):
+        wpn_res = _questions.weapon_def_patterns(team, wpn, _single_map)
+        body = _status_badge(wpn_res["status"])
+        if wpn_res["status"] != "found":
+            body += f'<p class="pattern-text" style="margin-top:8px">{_h(wpn_res["reason"])}</p>'
+        else:
+            body += f'<div class="evidence-baseline" style="margin:10px 0">Total DEF kills with {_h(wpn)}: <strong>{wpn_res["total_kills"]}</strong></div>'
+            for f in wpn_res["findings"]:
+                zones_html = "".join(f'<span class="zone-tag">{_h(z)} {n}×</span>'
+                                     for z, n in sorted(f["zones"].items(), key=lambda x: -x[1]))
+                small_note = ' <span class="n-small">⚠ small sample</span>' if f.get("small") else ""
+                body += f"""
+<div class="wpn-finding">
+  <div class="wpn-label">{_h(f['label'])} — {_h(f['map'])} ({f['total']} kills{small_note})</div>
+  <div class="wpn-zones">Zones: {zones_html}</div>
+  <div style="color:var(--text2);font-size:12px;margin-top:6px">Avg timing: <strong style="color:var(--text)">{f['avg_timing']}s</strong> into round</div>
+</div>"""
+
+        label = f"Defensive {wpn} Patterns"
+        parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">{sec_num}</div><h2>{label}</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Section 8: Defensive Stacking ────────────────────────────────────────
+    stack_res = _questions.def_stacking(team, _single_map)
+    body = _status_badge(stack_res["status"])
+    if stack_res["status"] != "found":
+        body += f'<p class="pattern-text" style="margin-top:8px">{_h(stack_res["reason"])}</p>'
+        if stack_res.get("eco_half_total", 0) > 0:
+            body += (f'<div class="tendency-meta" style="margin-top:10px">'
+                     f'Eco/half DEF rounds found: {stack_res["eco_half_total"]} &nbsp;·&nbsp; '
+                     f'Rounds with position data: {stack_res.get("rounds_with_pos",0)}</div>')
+    else:
+        STACK_COLORS = {
+            "A-heavy":   "var(--blue)",
+            "B-heavy":   "var(--accent2)",
+            "Mid-heavy": "var(--gold)",
+            "Default":   "var(--muted)",
+        }
+        for map_n, counts in stack_res["findings"].items():
+            total_st = counts["total"]
+            bar_rows = ""
+            for cls in ("A-heavy", "B-heavy", "Mid-heavy", "Default"):
+                n_cls = counts[cls]
+                if not n_cls:
+                    continue
+                pct_cls = round(n_cls / total_st * 100)
+                color   = STACK_COLORS.get(cls, "var(--text2)")
+                bar_rows += f"""
+<div class="stack-row">
+  <span class="stack-key">{_h(cls)}</span>
+  <span class="stack-val">{n_cls}/{total_st}</span>
+  {_pct_bar(pct_cls, color)}
+</div>"""
+            body += f"""
+<div class="stack-finding">
+  <div class="stack-map">{_h(map_n)} <span style="font-weight:400;color:var(--muted);font-size:12px">(n={total_st} eco/half rounds with position data)</span></div>
+  <div class="stack-bars">{bar_rows}</div>
+</div>"""
+
+    parts.append(f"""
+<div class="section">
+  <div class="section-header"><div class="section-number">8</div><h2>Low-Money Defensive Stacks</h2></div>
+  <div class="section-body">{body}</div>
+</div>""")
+
+    # ── Assemble ──────────────────────────────────────────────────────────────
+    body_html = "\n".join(parts)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anti-Strat: {_h(team)} — {_h(map_label)}</title>
+<style>{_HTML_CSS}</style>
+</head>
+<body>
+<div class="report-wrap">
+{body_html}
+</div>
+</body>
+</html>"""
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1677,6 +2246,7 @@ def main():
     ap.add_argument("--model",   default="qwen2.5:14b", help="Ollama model (--brief only)")
     ap.add_argument("--brief",   action="store_true",   help="Append LLM counter-strat brief (requires Ollama)")
     ap.add_argument("--save",    action="store_true",   help="Save report to .txt file")
+    ap.add_argument("--html",    action="store_true",   help="Save report as HTML file and open in browser")
     # Legacy aliases — kept for backward compatibility, map to default behaviour
     ap.add_argument("--no-ai",  action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--no-llm", action="store_true", help=argparse.SUPPRESS)
@@ -1718,6 +2288,16 @@ def main():
         out  = Path(__file__).parent / f"antistrat_{slug}_{maps}.txt"
         out.write_text(buf.getvalue(), encoding="utf-8")
         print(f"\n  Saved: {out}")
+
+    if args.html:
+        slug = args.team.lower().replace(" ", "_")
+        maps = "_".join(map_filter) if map_filter else "all"
+        out  = Path(__file__).parent / f"antistrat_{slug}_{maps}.html"
+        html = generate_html(data, args.team, args.vs, series_meta, map_filter)
+        out.write_text(html, encoding="utf-8")
+        print(f"\n  HTML saved: {out}")
+        import webbrowser
+        webbrowser.open(out.as_uri())
 
 
 if __name__ == "__main__":

@@ -1042,6 +1042,53 @@ def fetch_2d_map(series_id: int, map_num: int, headless: bool = False) -> dict:
                 }
             """)
             next_data = json.loads(raw) if raw else None
+
+            # Fetch every round's frames directly via the rib.gg API.
+            # rib.gg only auto-fetches a subset on initial load; the rest must
+            # be fetched explicitly. We call the API from within the page
+            # context so the browser's session cookies are used automatically.
+            if next_data:
+                try:
+                    import re as _re
+                    match_rounds = (
+                        next_data.get("props", {})
+                        .get("pageProps", {})
+                        .get("matchRounds", {})
+                        .get("rounds", [])
+                    )
+                    already_fetched = {
+                        int(m.group(1))
+                        for c in api_calls
+                        if (m := _re.search(r"/round/(\d+)/frames", c.get("url", "")))
+                    }
+                    total_rounds = [r["round_number"] for r in match_rounds
+                                    if isinstance(r, dict) and "round_number" in r]
+                    missing = [r for r in total_rounds if r not in already_fetched]
+                    if missing:
+                        log.info("Fetching %d missing rounds via API: %s", len(missing), missing)
+                    for rnum in missing:
+                        api_url = (f"https://be-prod.rib.gg/v1/2d-replay/series"
+                                   f"/{series_id}/map/{map_num}/round/{rnum}/frames")
+                        try:
+                            data = page.evaluate(f"""
+                                async () => {{
+                                    const r = await fetch("{api_url}",
+                                        {{credentials: "include"}});
+                                    if (!r.ok) return null;
+                                    return await r.json();
+                                }}
+                            """)
+                            if data:
+                                api_calls.append({"url": api_url, "data": data})
+                                log.info("  Round %d fetched (%d frames)",
+                                         rnum, len(data.get("frames", [])))
+                            else:
+                                log.warning("  Round %d returned null", rnum)
+                        except Exception as fe:
+                            log.warning("  Round %d fetch failed: %s", rnum, fe)
+                except Exception as nav_e:
+                    log.warning("Round fetch error: %s", nav_e)
+
         except Exception as e:
             log.error("Failed to load 2D page series %d map %d: %s", series_id, map_num, e)
             next_data = None

@@ -19,6 +19,25 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
+
+def round_timer(elapsed_ms: int) -> str:
+    """
+    Convert elapsed-since-action-phase milliseconds to the in-game round timer
+    string (counting down from 1:40).  Values past 100s are post-plant and
+    shown as '+Xs plant' so they match the defuse clock on the VOD.
+    """
+    elapsed_s = elapsed_ms / 1000
+    if elapsed_s <= 100:
+        remaining = 100 - elapsed_s
+        mins = int(remaining) // 60
+        secs = int(remaining) % 60
+        return f"{mins}:{secs:02d}"
+    else:
+        # Post-plant: timer has switched to the 45s defuse clock.
+        # We don't know exact plant time, so just show elapsed-past-100.
+        over = elapsed_s - 100
+        return f"+{over:.0f}s plant"
+
 DB_PATH = Path(__file__).parent / "valorant.db"
 
 MIN_N_ULT    = 3
@@ -99,14 +118,14 @@ def _fc_sides(conn, matches: list[dict]) -> dict:
     return result
 
 
-# ── Q1: Ult availability → ATK behavior ──────────────────────────────────────
+# -- Q1: Ult behavior (ult fired on ATK) -----------------------------------------
 
 def ult_behavior(team_name: str, map_name: str = None) -> dict:
     """
-    For each player: when they have ult available at round start, how does
-    site execution compare to the round baseline?
-    Uses positions.has_spike (ult_ready=1) at T<=5s — not ult_players_json
-    which is sparsely populated from rib.gg HTML.
+    Per player: rounds where they started with full ult (ult_charges == ult_max)
+    AND actually fired it (charges dropped to 0 mid-round).
+    Each player evaluated independently from teammates.
+    Requires ult_charges/ult_max data scraped from 2D replays.
     """
     conn = _db()
     matches = _team_matches(conn, team_name, map_name)
@@ -148,131 +167,147 @@ def ult_behavior(team_name: str, map_name: str = None) -> dict:
     base_a   = round(n_a_base / n_total * 100)
     base_b   = 100 - base_a
 
-    fc = _fc_sides(conn, matches)
-    fc_val   = [(r, fc.get(k)) for k, r in atk_rows.items() if fc.get(k) in ("A", "B")]
-    base_fk  = round(sum(1 for r, s in fc_val if s != r["site_executed"])
-                     / len(fc_val) * 100) if fc_val else None
-
     pid_agent: dict[int, list[int]] = defaultdict(list)
     pid_ign:   dict[int, str]       = {}
-    match_team_pids = {}
+    match_team_pids: dict[int, set] = {}
     for m in matches:
         pids_rows = conn.execute("""
             SELECT mp.player_id, mp.agent_id, pl.ign
             FROM match_players mp JOIN players pl ON pl.player_id=mp.player_id
             WHERE mp.match_id=? AND mp.team_number=?
         """, (m["match_id"], m["team_num"])).fetchall()
-        own = set()
+        own: set = set()
         for r in pids_rows:
             pid_agent[r["player_id"]].append(r["agent_id"])
             pid_ign[r["player_id"]] = r["ign"]
             own.add(r["player_id"])
         match_team_pids[m["match_id"]] = own
 
-    # Detect ult-ready players per round from positions (has_spike=1 at T<=5s)
-    player_buckets: dict[int, dict] = defaultdict(lambda: {"ult": [], "no_ult": []})
+    # Require ult_charges data (new schema)
+    match_ids    = [m["match_id"] for m in matches]
+    placeholders = ",".join("?" * len(match_ids))
+    has_data     = conn.execute(
+        f"SELECT COUNT(*) FROM positions WHERE match_id IN ({placeholders}) AND ult_max > 0",
+        match_ids,
+    ).fetchone()[0]
+    if not has_data:
+        conn.close()
+        return {
+            "status":     "data_missing",
+            "reason":     "No ult charge data. Re-scrape 2D replays to populate ult_charges.",
+            "findings":   [],
+            "atk_rounds": n_total,
+        }
+
+    # Per-round: for each own-team player independently check:
+    #   1. Did they START the round with full ult? (ult_charges == ult_max)
+    #   2. Did ult_charges drop to 0 LATER in the round? (ult was fired)
+    ult_fired_rounds: dict[int, list] = defaultdict(list)
     rounds_with_pos = 0
+
     for (mid, rnum), round_row in atk_rows.items():
         own_pids = match_team_pids.get(mid, set())
+
         pos_rows = conn.execute("""
-            SELECT player_id, has_spike
+            SELECT player_id, game_time_ms, ult_charges, ult_max, alive
             FROM positions
-            WHERE match_id=? AND round_number=? AND game_time_ms <= 5000
+            WHERE match_id=? AND round_number=? AND ult_max > 0
+            ORDER BY player_id, game_time_ms
         """, (mid, rnum)).fetchall()
 
         if not pos_rows:
             continue
+
+        by_pid: dict[int, list] = defaultdict(list)
+        for row in pos_rows:
+            if row["player_id"] in own_pids:
+                by_pid[row["player_id"]].append(row)
+
+        if not by_pid:
+            continue
         rounds_with_pos += 1
 
-        # First snapshot per player
-        seen: dict[int, int] = {}
-        for p in pos_rows:
-            pid = p["player_id"]
-            if pid in own_pids and pid not in seen:
-                seen[pid] = p["has_spike"]
+        for pid, frames in by_pid.items():
+            if len(frames) < 2:
+                continue
+            # Detect any transition: non-zero charges → 0 while alive.
+            # Catches players who charge mid-round and immediately fire.
+            prev = frames[0]["ult_charges"]
+            fire_ms = None
+            for f in frames[1:]:
+                if prev > 0 and f["ult_charges"] == 0 and f["alive"] == 1:
+                    fire_ms = f["game_time_ms"]
+                    break
+                prev = f["ult_charges"]
+            if fire_ms is not None:
+                ult_fired_rounds[pid].append({
+                    **round_row,
+                    "fire_timer": round_timer(fire_ms),
+                })
 
-        for pid in own_pids:
-            has_ult = seen.get(pid, 0)
-            player_buckets[pid]["ult" if has_ult else "no_ult"].append(round_row)
-
-    if rounds_with_pos == 0:
-        conn.close()
-        return {
-            "status":   "data_missing",
-            "reason":   (f"No position data found for any of the {n_total} ATK rounds. "
-                         "Re-scrape 2D replays to enable ult detection."),
-            "findings": [],
-            "atk_rounds": n_total,
-        }
-
-    ult_counts_by_player = {
-        pid_ign.get(pid, str(pid)): len(b["ult"])
-        for pid, b in player_buckets.items()
+    ult_counts = {
+        pid_ign.get(pid, str(pid)): len(rounds)
+        for pid, rounds in ult_fired_rounds.items()
     }
 
     findings: list[dict] = []
-    for pid, buckets in player_buckets.items():
-        ult_rounds = buckets["ult"]
-        if len(ult_rounds) < MIN_N_ULT:
+    for pid, rounds in ult_fired_rounds.items():
+        if len(rounds) < MIN_N_ULT:
             continue
         ign      = pid_ign.get(pid, str(pid))
         agents   = pid_agent.get(pid, [])
         agent_id = max(set(agents), key=agents.count) if agents else None
-        n_ult    = len(ult_rounds)
-        a_ult    = sum(1 for r in ult_rounds if r["site_executed"] == "A")
-        pct_a    = round(a_ult / n_ult * 100)
-        fc_ult_v = [(r, fc.get((r["match_id"], r["round_number"])))
-                    for r in ult_rounds
-                    if fc.get((r["match_id"], r["round_number"])) in ("A", "B")]
-        fk_ult   = round(sum(1 for r, s in fc_ult_v if s != r["site_executed"])
-                         / len(fc_ult_v) * 100) if fc_ult_v else None
+        n        = len(rounds)
+        pct_a    = round(sum(1 for r in rounds if r["site_executed"] == "A") / n * 100)
+        round_log = [
+            f"R{r['round_number']} @{r['fire_timer']}"
+            for r in rounds
+        ]
         findings.append({
-            "player":        ign,
-            "agent_id":      agent_id,
-            "label":         f"{ign} (agent {agent_id})" if agent_id else ign,
-            "ult_n":         n_ult,
-            "total_n":       n_total,
-            "a_pct":         pct_a,
-            "b_pct":         100 - pct_a,
-            "baseline_a":    base_a,
-            "baseline_b":    base_b,
-            "delta_a":       pct_a - base_a,
-            "fake_rate":     fk_ult,
-            "baseline_fake": base_fk,
-            "fake_n":        len(fc_ult_v),
+            "player":     ign,
+            "agent_id":   agent_id,
+            "label":      f"{ign} (agent {agent_id})" if agent_id else ign,
+            "ult_n":      n,
+            "total_n":    n_total,
+            "a_pct":      pct_a,
+            "b_pct":      100 - pct_a,
+            "baseline_a": base_a,
+            "baseline_b": base_b,
+            "delta_a":    pct_a - base_a,
+            "round_log":  round_log,
         })
 
     conn.close()
     findings.sort(key=lambda x: -x["ult_n"])
-    max_ult = max(ult_counts_by_player.values(), default=0)
+    max_count = max(ult_counts.values(), default=0)
 
     if findings:
         status = "found"
-        reason = (f"{len(findings)} player(s) met the threshold of {MIN_N_ULT}+ ult rounds "
-                  f"(detected from {rounds_with_pos}/{n_total} rounds with position data).")
-    elif max_ult == 0:
+        reason = (f"{len(findings)} player(s) with {MIN_N_ULT}+ rounds where they fired their ult "
+                  f"({rounds_with_pos}/{n_total} ATK rounds had position data).")
+    elif rounds_with_pos == 0:
+        status = "data_missing"
+        reason = "Position data exists but no rounds had ult_max > 0. Re-scrape 2D replays."
+    elif max_count == 0:
         status = "no_results"
         reason = (f"Checked {rounds_with_pos} rounds with position data. "
-                  f"No player had ult ready (has_spike=1) at round start.")
+                  f"No player both started with full ult and fired it on ATK.")
     else:
         status = "insufficient_sample"
-        per_player = ", ".join(f"{p}: {n}" for p, n in
-                               sorted(ult_counts_by_player.items(), key=lambda x: -x[1])
-                               if n > 0)
-        reason = (f"Ult rounds detected but below threshold of {MIN_N_ULT} per player. "
-                  f"Counts: {per_player}.")
+        per = ", ".join(f"{p}: {n}" for p, n in
+                        sorted(ult_counts.items(), key=lambda x: -x[1]) if n > 0)
+        reason = f"Ult-fired rounds below threshold of {MIN_N_ULT} per player. Counts: {per}."
 
     return {
-        "status":        status,
-        "reason":        reason,
-        "findings":      findings,
-        "atk_rounds":    n_total,
+        "status":          status,
+        "reason":          reason,
+        "findings":        findings,
+        "atk_rounds":      n_total,
         "rounds_with_pos": rounds_with_pos,
-        "ult_counts":    ult_counts_by_player,
-        "threshold":     MIN_N_ULT,
-        "baseline_a":    base_a,
-        "baseline_b":    base_b,
-        "baseline_fake": base_fk,
+        "ult_counts":      ult_counts,
+        "threshold":       MIN_N_ULT,
+        "baseline_a":      base_a,
+        "baseline_b":      base_b,
     }
 
 

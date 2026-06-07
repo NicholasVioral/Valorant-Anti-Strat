@@ -1,0 +1,321 @@
+{
+  "map": "Lotus",
+  "source": "valorant-api.com (uuid: 2fe4ed3a-450a-948b-6d6b-e89a78e680a9)",
+  "coordinateTransform": {
+    "xMultiplier": 0.000072,
+    "yMultiplier": -0.000072,
+    "xScalarToAdd": 0.454789,
+    "yScalarToAdd": 0.917752,
+    "formula": "normalizedX = location.y * xMultiplier + xScalarToAdd; normalizedY = location.x * yMultiplier + yScalarToAdd"
+  },
+  "callouts": [
+    {
+      "name": "A Top",
+      "regionName": "Top",
+      "superRegionName": "A",
+      "location": {
+        "x": 9260.3,
+        "y": 5045.5884
+      },
+      "normalizedX": 0.791,
+      "normalizedY": 0.2553
+    },
+    {
+      "name": "A Drop",
+      "regionName": "Drop",
+      "superRegionName": "A",
+      "location": {
+        "x": 9516.38,
+        "y": 6092.8936
+      },
+      "normalizedX": 0.8935,
+      "normalizedY": 0.2326
+    },
+    {
+      "name": "A Stairs",
+      "regionName": "Stairs",
+      "superRegionName": "A",
+      "location": {
+        "x": 8257.875,
+        "y": 3860.9312
+      },
+      "normalizedX": 0.7328,
+      "normalizedY": 0.3232
+    },
+    {
+      "name": "A Site",
+      "regionName": "Site",
+      "superRegionName": "A",
+      "location": {
+        "x": 7735.5396,
+        "y": 5557.309
+      },
+      "normalizedX": 0.8549,
+      "normalizedY": 0.4094
+    },
+    {
+      "name": "A Hut",
+      "regionName": "Hut",
+      "superRegionName": "A",
+      "location": {
+        "x": 7917.4614,
+        "y": 5557.309
+      },
+      "normalizedX": 0.8606,
+      "normalizedY": 0.332
+    },
+    {
+      "name": "A Tree",
+      "regionName": "Tree",
+      "superRegionName": "A",
+      "location": {
+        "x": 6149.525,
+        "y": 5557.309
+      },
+      "normalizedX": 0.8563,
+      "normalizedY": 0.4736
+    },
+    {
+      "name": "A Door",
+      "regionName": "Door",
+      "superRegionName": "A",
+      "location": {
+        "x": 5608.7563,
+        "y": 5203.91
+      },
+      "normalizedX": 0.8338,
+      "normalizedY": 0.5253
+    },
+    {
+      "name": "A Link",
+      "regionName": "Link",
+      "superRegionName": "A",
+      "location": {
+        "x": 6011.0664,
+        "y": 2087.6528
+      },
+      "normalizedX": 0.6108,
+      "normalizedY": 0.485
+    },
+    {
+      "name": "A Main",
+      "regionName": "Main",
+      "superRegionName": "A",
+      "location": {
+        "x": 5288.3022,
+        "y": 4159.762
+      },
+      "normalizedX": 0.7414,
+      "normalizedY": 0.487
+    },
+    {
+      "name": "A Rubble",
+      "regionName": "Rubble",
+      "superRegionName": "A",
+      "location": {
+        "x": 4401.0713,
+        "y": 4918.189
+      },
+      "normalizedX": 0.8046,
+      "normalizedY": 0.6123
+    },
+    {
+      "name": "A Root",
+      "regionName": "Root",
+      "superRegionName": "A",
+      "location": {
+        "x": 4401.0713,
+        "y": 3294.1523
+      },
+      "normalizedX": 0.672,
+      "normalizedY": 0.628
+    },
+    {
+      "name": "A Lobby",
+      "regionName": "Lobby",
+      "superRegionName": "A",
+      "location": {
+        "x": 2685.951,
+        "y": 2927.1755
+      },
+      "normalizedX": 0.6655,
+      "normalizedY": 0.7244
+    },
+    {
+      "name": "B Upper",
+      "regionName": "Upper",
+      "superRegionName": "B",
+      "location": {
+        "x": 7682.943,
+        "y": 1517.3606
+      },
+      "normalizedX": 0.544,
+      "normalizedY": 0.3775
+    },
+    {
+      "name": "B Site",
+      "regionName": "Site",
+      "superRegionName": "B",
+      "location": {
+        "x": 6368.0327,
+        "y": 668.18317
+      },
+      "normalizedX": 0.5029,
+      "normalizedY": 0.4593
+    },
+    {
+      "name": "B Main",
+      "regionName": "Main",
+      "superRegionName": "B",
+      "location": {
+        "x": 4876.832,
+        "y": -47.87195
+      },
+      "normalizedX": 0.4513,
+      "normalizedY": 0.5752
+    },
+    {
+      "name": "B Pillars",
+      "regionName": "Pillars",
+      "superRegionName": "B",
+      "location": {
+        "x": 3565.3691,
+        "y": 668.18317
+      },
+      "normalizedX": 0.5015,
+      "normalizedY": 0.681
+    },
+    {
+      "name": "C Gravel",
+      "regionName": "Gravel",
+      "superRegionName": "C",
+      "location": {
+        "x": 8936.881,
+        "y": -1752.2874
+      },
+      "normalizedX": 0.3843,
+      "normalizedY": 0.2714
+    },
+    {
+      "name": "C Hall",
+      "regionName": "Hall",
+      "superRegionName": "C",
+      "location": {
+        "x": 7902.0615,
+        "y": -4265.876
+      },
+      "normalizedX": 0.199,
+      "normalizedY": 0.3488
+    },
+    {
+      "name": "C Link",
+      "regionName": "Link",
+      "superRegionName": "C",
+      "location": {
+        "x": 7504.109,
+        "y": -1377.893
+      },
+      "normalizedX": 0.367,
+      "normalizedY": 0.3875
+    },
+    {
+      "name": "C Waterfall",
+      "regionName": "Waterfall",
+      "superRegionName": "C",
+      "location": {
+        "x": 6719.804,
+        "y": -1994.2986
+      },
+      "normalizedX": 0.2969,
+      "normalizedY": 0.471
+    },
+    {
+      "name": "C Site",
+      "regionName": "Site",
+      "superRegionName": "C",
+      "location": {
+        "x": 6676.6636,
+        "y": -4265.876
+      },
+      "normalizedX": 0.1461,
+      "normalizedY": 0.4613
+    },
+    {
+      "name": "C Door",
+      "regionName": "Door",
+      "superRegionName": "C",
+      "location": {
+        "x": 4818.6655,
+        "y": -1752.8021
+      },
+      "normalizedX": 0.3357,
+      "normalizedY": 0.5779
+    },
+    {
+      "name": "C Main",
+      "regionName": "Main",
+      "superRegionName": "C",
+      "location": {
+        "x": 5311.2646,
+        "y": -3148.162
+      },
+      "normalizedX": 0.2181,
+      "normalizedY": 0.5482
+    },
+    {
+      "name": "C Mound",
+      "regionName": "Mound",
+      "superRegionName": "C",
+      "location": {
+        "x": 3863.7183,
+        "y": -1576.5884
+      },
+      "normalizedX": 0.277,
+      "normalizedY": 0.6353
+    },
+    {
+      "name": "C Bend",
+      "regionName": "Bend",
+      "superRegionName": "C",
+      "location": {
+        "x": 5657.522,
+        "y": -5281.4395
+      },
+      "normalizedX": 0.0731,
+      "normalizedY": 0.5404
+    },
+    {
+      "name": "C Lobby",
+      "regionName": "Lobby",
+      "superRegionName": "C",
+      "location": {
+        "x": 1403.5685,
+        "y": -1576.5884
+      },
+      "normalizedX": 0.3213,
+      "normalizedY": 0.7667
+    },
+    {
+      "name": "Defender Spawn",
+      "regionName": "Spawn",
+      "superRegionName": "Defender Side",
+      "location": {
+        "x": 9686.767,
+        "y": 1697.8223
+      },
+      "normalizedX": 0.6113,
+      "normalizedY": 0.1761
+    },
+    {
+      "name": "Attacker Spawn",
+      "regionName": "Spawn",
+      "superRegionName": "Attacker Side",
+      "location": {
+        "x": 1401.2915,
+        "y": 777.29834
+      },
+      "normalizedX": 0.5179,
+      "normalizedY": 0.8255
+    }
+  ]
+}
