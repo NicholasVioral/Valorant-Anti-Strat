@@ -123,6 +123,40 @@
     .t-bar-fill.A { background: #22c55e; }
     .t-bar-fill.B { background: #ef4444; }
 
+    /* ── ROUND CLIPS (video verification) ── */
+    .t-rounds { margin-top: 8px; }
+    .t-rounds summary {
+      cursor: pointer;
+      font-size: 0.75em;
+      color: #6b7280;
+      user-select: none;
+    }
+    .t-rounds summary:hover { color: #9aa5b4; }
+    .round-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+    .chip {
+      font-size: 0.72em;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid #1e2436;
+      background: #0f121a;
+      color: #9aa5b4;
+      font-family: inherit;
+    }
+    button.chip.has-clip { cursor: pointer; }
+    button.chip.has-clip:hover,
+    button.chip.has-clip.playing { border-color: #7dd3fc; color: #7dd3fc; }
+    button.chip.has-clip::before { content: '▶ '; color: #7dd3fc; }
+    .chip.no-clip { opacity: 0.45; }
+    .chip .site-a { color: #22c55e; font-weight: 600; }
+    .chip .site-b { color: #ef4444; font-weight: 600; }
+    .clip-player iframe {
+      width: 100%;
+      max-width: 560px;
+      aspect-ratio: 16 / 9;
+      border: 1px solid #1e2436;
+      border-radius: 6px;
+    }
+
     /* ── RECURRING PATTERNS ── */
     .pattern-list { list-style: none; padding: 0; margin: 0; }
     .pattern-list li {
@@ -288,6 +322,31 @@
         <div class="t-bar-bg">
           <div class="t-bar-fill {{ ins.site }}" style="width:{{ ins.bar }}%"></div>
         </div>
+        {% if ins.rounds %}
+        <details class="t-rounds">
+          <summary>
+            Verify on video — {{ ins.n_clips or 0 }} of {{ ins.rounds|length }}
+            rounds have clips{% if not ins.n_clips %} (sync a VOD on <a href="/vods" style="color:#7dd3fc">/vods</a>){% endif %}
+          </summary>
+          <div class="round-chips">
+            {% for rd in ins.rounds %}
+              {% if rd.yt %}
+              <button class="chip has-clip"
+                      onclick="playClip(this, '{{ rd.yt }}', {{ rd.start }}, {{ rd.end }})">
+                {{ rd.map }} R{{ rd.round }} vs {{ rd.opp }}
+                → <span class="site-{{ rd.site|lower }}">{{ rd.site }}</span>{{ ' ✓' if rd.won else ' ✗' }}
+              </button>
+              {% else %}
+              <span class="chip no-clip" title="No VOD synced for this match">
+                {{ rd.map }} R{{ rd.round }} vs {{ rd.opp }}
+                → <span class="site-{{ rd.site|lower }}">{{ rd.site }}</span>{{ ' ✓' if rd.won else ' ✗' }}
+              </span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="clip-player"></div>
+        </details>
+        {% endif %}
       </div>
     </div>
   {% endfor %}
@@ -364,6 +423,18 @@
 <div class="footer">
   <a href="/">← All Teams</a>
 </div>
+
+<script>
+function playClip(btn, ytId, start, end) {
+  const details = btn.closest('details');
+  const player = details.querySelector('.clip-player');
+  details.querySelectorAll('.chip.playing').forEach(c => c.classList.remove('playing'));
+  btn.classList.add('playing');
+  player.innerHTML = '<iframe src="https://www.youtube.com/embed/' + ytId +
+    '?start=' + start + '&end=' + end + '&autoplay=1"' +
+    ' allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+}
+</script>
 
 </body>
 </html>

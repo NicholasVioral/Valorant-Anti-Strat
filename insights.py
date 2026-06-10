@@ -161,7 +161,8 @@ def find_insights(team_name: str, map_name: str | None = None) -> dict:
     Each insight has:
       rank, category, label, site, conditional_pct, baseline_pct,
       n, count_a, count_b, delta, z, bar, stars, confidence, small_sample,
-      plant_rate, baseline_plant_rate, win_rate.
+      plant_rate, baseline_plant_rate, win_rate,
+      rounds — [{match_id, round, site, won}] contributing rounds for clip links.
     """
     conn = _db()
     try:
@@ -366,6 +367,12 @@ def _compute(conn, team_name: str, map_name: str | None) -> dict:
             "plant_rate":          round(plant_rate   * 100),
             "baseline_plant_rate": round(baseline_plant * 100),
             "win_rate":            round(win_rate * 100),
+            "rounds":              [{"match_id": r["match_id"],
+                                     "round":    r["round"],
+                                     "site":     r["site"],
+                                     "won":      bool(r["won_round"])}
+                                    for r in sorted(sub, key=lambda x:
+                                                    (x["match_id"], x["round"]))],
         })
 
     # ── Conditions ────────────────────────────────────────────────────────────

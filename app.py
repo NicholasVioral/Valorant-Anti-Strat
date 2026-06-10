@@ -8,6 +8,7 @@ import json
 import math
 import sqlite3
 import statistics
+import threading
 from pathlib import Path
 
 from flask import Flask, render_template, jsonify, request
@@ -585,12 +586,60 @@ def api_replay_round(match_id, round_num):
 
 # ── Conditional probability report ───────────────────────────────────────────
 
+def _attach_vod_clips(report: dict) -> dict:
+    """Annotate each insight's contributing rounds with YouTube clip info
+    (youtube_id + start/end seconds) from the vod_rounds table, plus a
+    human-readable map / opponent label for every round."""
+    if not report or not report.get("insights"):
+        return report
+    mids = {rd["match_id"] for ins in report["insights"]
+            for rd in ins.get("rounds", [])}
+    if not mids:
+        return report
+
+    conn = db()
+    qs = ",".join("?" * len(mids))
+    try:
+        vod_rows = conn.execute(f"""
+            SELECT match_id, round_number, youtube_id, start_s, end_s
+            FROM vod_rounds WHERE match_id IN ({qs})
+        """, tuple(mids)).fetchall()
+    except sqlite3.OperationalError:        # no VOD scanned yet
+        vod_rows = []
+    vodmap = {(r["match_id"], r["round_number"]): r for r in vod_rows}
+
+    team = (report.get("team") or "").lower()
+    ctx = {}
+    for c in conn.execute(f"""
+            SELECT m.match_id, m.map_name, s.team1_name, s.team2_name
+            FROM matches m JOIN series s ON s.series_id = m.series_id
+            WHERE m.match_id IN ({qs})""", tuple(mids)):
+        opp = c["team2_name"] if (c["team1_name"] or "").lower() == team \
+              else c["team1_name"]
+        ctx[c["match_id"]] = (c["map_name"] or "?", opp or "?")
+    conn.close()
+
+    for ins in report["insights"]:
+        with_clip = 0
+        for rd in ins.get("rounds", []):
+            rd["map"], rd["opp"] = ctx.get(rd["match_id"], ("?", "?"))
+            v = vodmap.get((rd["match_id"], rd["round"]))
+            if v:
+                rd["yt"]    = v["youtube_id"]
+                rd["start"] = int(v["start_s"])
+                rd["end"]   = int(v["end_s"] or v["start_s"] + 100)
+                with_clip  += 1
+        ins["n_clips"] = with_clip
+    report["has_vod"] = bool(vodmap)
+    return report
+
+
 @app.route("/report/<path:team>/<path:map_name>")
 def report_page(team, map_name):
     report = _insights.find_insights(team, map_name)
     if not report:
         return f"No data found for '{team}' on {map_name}.", 404
-    return render_template("report.html", report=report)
+    return render_template("report.html", report=_attach_vod_clips(report))
 
 
 @app.route("/report/<path:team>")
@@ -598,9 +647,80 @@ def report_page_all_maps(team):
     report = _insights.find_insights(team)
     if not report:
         return f"No data found for '{team}'.", 404
-    return render_template("report.html", report=report)
+    return render_template("report.html", report=_attach_vod_clips(report))
+
+
+# ── VOD sync (YouTube round clips) ────────────────────────────────────────────
+
+_vod_scan = {"running": False, "phase": None, "pct": 0, "message": "",
+             "result": None, "error": None}
+_vod_lock = threading.Lock()
+
+
+def _run_vod_scan(url: str, series_id: int):
+    import vod_sync
+
+    def cb(phase, pct, msg):
+        with _vod_lock:
+            _vod_scan.update(phase=phase, pct=round(pct, 1), message=msg)
+
+    try:
+        result = vod_sync.scan_vod(url, series_id, cb)
+        with _vod_lock:
+            _vod_scan.update(running=False, result=result, pct=100)
+    except Exception as e:                                  # noqa: BLE001
+        with _vod_lock:
+            _vod_scan.update(running=False, error=str(e))
+
+
+@app.route("/vods")
+def vods_page():
+    conn = db()
+    series = conn.execute("""
+        SELECT series_id, team1_name, team2_name, event_name, start_date
+        FROM series ORDER BY start_date DESC
+    """).fetchall()
+    try:
+        vods = conn.execute("""
+            SELECT v.youtube_id, v.title, v.status, v.message, v.scanned_at,
+                   s.team1_name, s.team2_name,
+                   (SELECT COUNT(*) FROM vod_rounds vr
+                     WHERE vr.youtube_id = v.youtube_id) AS n_rounds
+            FROM vods v LEFT JOIN series s ON s.series_id = v.series_id
+            ORDER BY v.scanned_at DESC
+        """).fetchall()
+    except sqlite3.OperationalError:
+        vods = []
+    conn.close()
+    return render_template("vods.html",
+                           series=[dict(r) for r in series],
+                           vods=[dict(r) for r in vods])
+
+
+@app.route("/api/vod/scan", methods=["POST"])
+def vod_scan_start():
+    data = request.get_json(force=True)
+    url, series_id = data.get("url", "").strip(), data.get("series_id")
+    if not url or not series_id:
+        return jsonify({"error": "url and series_id are required"}), 400
+    with _vod_lock:
+        if _vod_scan["running"]:
+            return jsonify({"error": "a scan is already running"}), 409
+        _vod_scan.update(running=True, phase="start", pct=0,
+                         message="Starting…", result=None, error=None)
+    threading.Thread(target=_run_vod_scan,
+                     args=(url, int(series_id)), daemon=True).start()
+    return jsonify({"started": True})
+
+
+@app.route("/api/vod/status")
+def vod_scan_status():
+    with _vod_lock:
+        return jsonify(dict(_vod_scan))
 
 
 if __name__ == "__main__":
     print("Starting server at http://localhost:5000")
-    app.run(debug=True, port=5000)
+    # use_reloader=False: the auto-reloader restarts the process when the VOD
+    # scan thread loads torch/easyocr, killing the scan mid-run.
+    app.run(debug=True, port=5000, use_reloader=False)

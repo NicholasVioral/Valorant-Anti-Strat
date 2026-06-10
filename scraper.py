@@ -202,6 +202,24 @@ CREATE TABLE IF NOT EXISTS positions (
 );
 CREATE INDEX IF NOT EXISTS idx_pos_match_round ON positions(match_id, round_number);
 CREATE INDEX IF NOT EXISTS idx_pos_series      ON positions(series_id);
+
+CREATE TABLE IF NOT EXISTS round_loadouts (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id         INTEGER NOT NULL,
+    series_id        INTEGER NOT NULL,
+    round_number     INTEGER,
+    player_id        INTEGER,
+    player_ign       TEXT,
+    team_number      INTEGER,
+    primary_weapon   TEXT,
+    secondary_weapon TEXT,
+    armor            INTEGER,
+    credits          INTEGER,
+    loadout_value    INTEGER,
+    UNIQUE(match_id, round_number, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rl_match  ON round_loadouts(match_id);
+CREATE INDEX IF NOT EXISTS idx_rl_series ON round_loadouts(series_id);
 """
 
 # ── DB ────────────────────────────────────────────────────────────────────────
@@ -1300,9 +1318,17 @@ def _parse_ribgg_2d(pp: dict, series_id: int, match_id: int,
                     all_frame_sources.append((call_frames, rnum))
 
     rows = []
+    last_starting: dict[int, list] = {}  # round_number -> last buy-phase playerStatus
+
     for frame_list, forced_round in all_frame_sources:
         for frame in frame_list:
-            if frame.get("phase") != "IN_ROUND":
+            phase = frame.get("phase")
+
+            # Capture last buy-phase snapshot per round (forced_round only, SSR is round 1)
+            if phase == "ROUND_STARTING" and forced_round is not None:
+                last_starting[forced_round] = frame.get("playerStatus", [])
+
+            if phase != "IN_ROUND":
                 continue
 
             time_str = frame.get("omittingPauses", "0s")
@@ -1357,6 +1383,32 @@ def _parse_ribgg_2d(pp: dict, series_id: int, match_id: int,
         log.warning("matchRoundFrames found but no IN_ROUND frames extracted for match %d", match_id)
         return 0
 
+    # Build per-player loadout rows from last buy-phase frame of each round
+    loadout_rows = []
+    for round_num, player_statuses in last_starting.items():
+        for ps in player_statuses:
+            pid   = ps.get("playerId")
+            p_cfg = player_map.get(pid, {})
+            tnum  = team_map.get(pid)
+            primary = secondary = None
+            for item in ps.get("inventory", []):
+                slot = item.get("slot", "")
+                if slot == "PRIMARY":
+                    primary = item.get("displayName")
+                elif slot == "SECONDARY":
+                    secondary = item.get("displayName")
+            loadout_rows.append((
+                match_id, series_id, round_num,
+                p_cfg.get("rib_id") or pid,
+                p_cfg.get("display_name"),
+                tnum,
+                primary,
+                secondary,
+                ps.get("armor", 0),
+                ps.get("credits", 0),
+                ps.get("loadoutValue", 0),
+            ))
+
     with db_conn() as conn:
         conn.execute("DELETE FROM positions WHERE match_id=?", (match_id,))
         conn.executemany("""
@@ -1366,9 +1418,17 @@ def _parse_ribgg_2d(pp: dict, series_id: int, match_id: int,
                ult_charges, ult_max)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, rows)
+        if loadout_rows:
+            conn.execute("DELETE FROM round_loadouts WHERE match_id=?", (match_id,))
+            conn.executemany("""
+                INSERT OR REPLACE INTO round_loadouts
+                  (match_id, series_id, round_number, player_id, player_ign, team_number,
+                   primary_weapon, secondary_weapon, armor, credits, loadout_value)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """, loadout_rows)
 
-    log.info("Stored %d position frames for match %d across %d rounds",
-             len(rows), match_id, len(round_times))
+    log.info("Stored %d position frames + %d loadout rows for match %d across %d rounds",
+             len(rows), len(loadout_rows), match_id, len(round_times))
     return len(rows)
 
 

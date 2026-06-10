@@ -29,7 +29,10 @@
 <body>
 <nav class="navbar navbar-dark px-4 py-3" style="background:#0d1520; border-bottom:1px solid #1e2e3e">
   <span class="navbar-brand fs-5">VALORANT COUNTER-STRAT</span>
-  <span class="text-muted small">{{ teams|length }} teams &bull; click any team to analyze</span>
+  <span class="text-muted small">
+    {{ teams|length }} teams &bull; click any team to analyze &bull;
+    <a href="/vods" style="color:#7dd3fc">sync a YouTube VOD →</a>
+  </span>
 </nav>
 
 <div class="container py-4">
